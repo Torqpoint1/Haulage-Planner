@@ -1,5 +1,6 @@
 import { ClipboardList, Plus, Upload } from "lucide-react";
 import type { Metadata } from "next";
+import { requireArea } from "@/lib/auth/session";
 import { PageContainer, PageHeader } from "@/components/shell/page";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -7,7 +8,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 
 export const metadata: Metadata = { title: "Orders" };
 
-export default function OrdersPage() {
+export default async function OrdersPage() {
+  await requireArea("orders");
   return (
     <PageContainer>
       <PageHeader

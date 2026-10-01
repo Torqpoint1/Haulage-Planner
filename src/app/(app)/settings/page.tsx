@@ -14,12 +14,14 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
+import { requireArea } from "@/lib/auth/session";
 import { PageContainer, PageHeader } from "@/components/shell/page";
 import { Card } from "@/components/ui/card";
 
 export const metadata: Metadata = { title: "Settings" };
 
-const SECTIONS: { title: string; description: string; icon: LucideIcon }[] = [
+const SECTIONS: { title: string; description: string; icon: LucideIcon; href?: string }[] = [
   {
     title: "Organisation & branding",
     description: "Name, logo, accent colour and timezone.",
@@ -30,6 +32,7 @@ const SECTIONS: { title: string; description: string; icon: LucideIcon }[] = [
     title: "Users & roles",
     description: "Invite people and choose what they can do.",
     icon: Users,
+    href: "/settings/users",
   },
   {
     title: "Handling unit types",
@@ -62,7 +65,8 @@ const SECTIONS: { title: string; description: string; icon: LucideIcon }[] = [
   },
 ];
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  await requireArea("settings");
   return (
     <PageContainer>
       <PageHeader
@@ -70,9 +74,9 @@ export default function SettingsPage() {
         description="Set up once; a new customer is a setup job, never a code change."
       />
       <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {SECTIONS.map(({ title, description, icon: Icon }) => (
-          <li key={title} className="min-w-0">
-            <Card className="flex h-full items-start gap-4 p-4">
+        {SECTIONS.map(({ title, description, icon: Icon, href }) => {
+          const body = (
+            <>
               <span className="flex size-control shrink-0 items-center justify-center rounded-md bg-surface-muted text-text-muted">
                 <Icon className="size-icon" aria-hidden />
               </span>
@@ -80,9 +84,22 @@ export default function SettingsPage() {
                 <span className="text-sm font-semibold">{title}</span>
                 <span className="text-sm text-text-muted">{description}</span>
               </span>
-            </Card>
-          </li>
-        ))}
+            </>
+          );
+          return (
+            <li key={title} className="min-w-0">
+              {href ? (
+                <Link href={href} className="block h-full rounded-lg">
+                  <Card interactive className="flex h-full items-start gap-4 p-4">
+                    {body}
+                  </Card>
+                </Link>
+              ) : (
+                <Card className="flex h-full items-start gap-4 p-4">{body}</Card>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </PageContainer>
   );

@@ -47,3 +47,6 @@ next-env.d.ts
 
 # env example is committed
 !.env.example
+
+# playwright sign-in state
+/e2e/.auth/

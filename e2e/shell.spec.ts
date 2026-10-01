@@ -98,8 +98,8 @@ test("keyboard users can skip to content and see focus", async ({ page }) => {
 for (const { name, width, height } of WIDTHS) {
   test(`no overflow on any screen at ${name} width`, async ({ page }) => {
     await page.setViewportSize({ width, height });
-    for (const screen of SCREENS) {
-      await page.goto(screen.path);
+    for (const path of [...SCREENS.map((s) => s.path), "/settings/users"]) {
+      await page.goto(path);
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
       await expectNoOverflow(page);
     }

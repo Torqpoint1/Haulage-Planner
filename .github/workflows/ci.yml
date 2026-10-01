@@ -15,11 +15,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
 
-  e2e:
+  integration:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,6 +29,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Start local Supabase
+        run: npx supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor,realtime,postgres-meta
+      - name: Organisation isolation and role tests (spec 5)
+        run: npm run test:db
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
       - name: Upload screenshots for review (spec 10.10)

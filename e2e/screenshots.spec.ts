@@ -52,6 +52,61 @@ for (const theme of THEMES) {
         }
       });
 
+      test("users and roles", async ({ page }) => {
+        await page.goto("/settings/users");
+        await expect(page.getByRole("heading", { level: 1, name: "Users & roles" })).toBeVisible();
+        await settle(page);
+        await page.screenshot({
+          path: `screenshots/${theme}/${width}/settings-users.png`,
+          fullPage: true,
+        });
+        await page.getByRole("button", { name: "Invite someone" }).click();
+        await expect(page.getByRole("dialog")).toBeVisible();
+        await page.screenshot({ path: `screenshots/${theme}/${width}/state-invite-modal.png` });
+      });
+
+      test.describe("signed out", () => {
+        test.use({ storageState: { cookies: [], origins: [] } });
+        for (const [name, path, heading] of [
+          ["sign-in", "/sign-in", "Sign in"],
+          ["sign-up", "/sign-up", "Create an account"],
+          ["invite-not-found", `/invite/${"0".repeat(64)}`, "Invitation not found"],
+        ] as const) {
+          test(name, async ({ page }) => {
+            await setPreferences(page, theme);
+            await page.goto(path);
+            await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+            await settle(page);
+            await page.screenshot({
+              path: `screenshots/${theme}/${width}/${name}.png`,
+              fullPage: true,
+            });
+          });
+        }
+      });
+
+      test.describe("other roles", () => {
+        test.use({ storageState: "e2e/.auth/driver.json" });
+        test("driver run and no-access", async ({ page }) => {
+          await setPreferences(page, theme);
+          await page.goto("/driver");
+          await expect(page.getByRole("heading", { level: 1, name: "My run" })).toBeVisible();
+          await settle(page);
+          await page.screenshot({
+            path: `screenshots/${theme}/${width}/driver.png`,
+            fullPage: true,
+          });
+          await page.goto("/settings");
+          await expect(
+            page.getByRole("heading", { name: "You don't have access to that page" }),
+          ).toBeVisible();
+          await page.screenshot({
+            path: `screenshots/${theme}/${width}/no-access.png`,
+            fullPage: true,
+          });
+        });
+      });
+
       test("open states", async ({ page }) => {
         await page.goto("/dev/components");
         await settle(page);

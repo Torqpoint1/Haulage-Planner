@@ -1,5 +1,6 @@
 import { History, Search } from "lucide-react";
 import type { Metadata } from "next";
+import { requireArea } from "@/lib/auth/session";
 import { PageContainer, PageHeader } from "@/components/shell/page";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -7,7 +8,8 @@ import { Input } from "@/components/ui/input";
 
 export const metadata: Metadata = { title: "History" };
 
-export default function HistoryPage() {
+export default async function HistoryPage() {
+  await requireArea("history");
   return (
     <PageContainer>
       <PageHeader

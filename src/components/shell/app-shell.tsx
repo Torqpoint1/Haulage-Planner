@@ -6,21 +6,26 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
-import { APP_NAME, NAV_ITEMS, isActive, type NavItem } from "./nav";
+import type { Role } from "@/lib/auth/roles";
+import { APP_NAME, isActive, navFor, type NavItem } from "./nav";
 import { UserMenu } from "./user-menu";
 
 type AppShellProps = {
   children: React.ReactNode;
   orgName: string;
   userName: string;
+  email: string;
+  role: Role;
 };
 
 /**
  * Responsive navigation (spec 9): a left sidebar on desktop (1280+), an icon
  * rail on tablet (768+), and a bottom bar on phones.
  */
-export function AppShell({ children, orgName, userName }: AppShellProps) {
+export function AppShell({ children, orgName, userName, email, role }: AppShellProps) {
   const pathname = usePathname();
+  const items = navFor(role);
+  const account = { name: userName, email, role, orgName };
 
   return (
     <div className="flex min-h-dvh">
@@ -47,7 +52,7 @@ export function AppShell({ children, orgName, userName }: AppShellProps) {
           </span>
         </div>
         <ul className="flex flex-1 flex-col gap-1 overflow-y-auto p-3 scrollbar-thin">
-          {NAV_ITEMS.map((item) => (
+          {items.map((item) => (
             <li key={item.href}>
               <SidebarLink item={item} active={isActive(pathname, item.href)} />
             </li>
@@ -55,10 +60,10 @@ export function AppShell({ children, orgName, userName }: AppShellProps) {
         </ul>
         <div className="flex shrink-0 border-t border-border p-3 max-xl:justify-center">
           <div className="hidden w-full xl:block">
-            <UserMenu name={userName} detail={orgName} variant="full" side="top" />
+            <UserMenu {...account} variant="full" side="top" />
           </div>
           <div className="xl:hidden">
-            <UserMenu name={userName} side="right" />
+            <UserMenu {...account} side="right" />
           </div>
         </div>
       </nav>
@@ -73,7 +78,7 @@ export function AppShell({ children, orgName, userName }: AppShellProps) {
               <span className="truncate text-xs text-text-subtle">{orgName}</span>
             </span>
           </div>
-          <UserMenu name={userName} />
+          <UserMenu {...account} />
         </header>
 
         <main
@@ -85,7 +90,7 @@ export function AppShell({ children, orgName, userName }: AppShellProps) {
         </main>
       </div>
 
-      <BottomBar pathname={pathname} />
+      <BottomBar pathname={pathname} items={items} />
     </div>
   );
 }
@@ -128,10 +133,12 @@ function SidebarLink({ item, active }: { item: NavItem; active: boolean }) {
   );
 }
 
-function BottomBar({ pathname }: { pathname: string }) {
+function BottomBar({ pathname, items }: { pathname: string; items: NavItem[] }) {
   const [moreOpen, setMoreOpen] = useState(false);
-  const primary = NAV_ITEMS.filter((i) => i.phonePrimary);
-  const secondary = NAV_ITEMS.filter((i) => !i.phonePrimary);
+  // Five slots fit at 375px; beyond that, the rest go under "More".
+  const fitsAll = items.length <= 5;
+  const primary = fitsAll ? items : items.filter((i) => i.phonePrimary);
+  const secondary = fitsAll ? [] : items.filter((i) => !i.phonePrimary);
   const moreActive = secondary.some((i) => isActive(pathname, i.href));
 
   return (
@@ -173,9 +180,9 @@ function BottomBar({ pathname }: { pathname: string }) {
           </ul>
         </>
       ) : null}
-      <ul className="grid h-bottombar grid-cols-5">
+      <ul className="flex h-bottombar">
         {primary.map((item) => (
-          <li key={item.href} className="min-w-0">
+          <li key={item.href} className="min-w-0 flex-1">
             <BottomLink
               href={item.href}
               label={item.label}
@@ -185,21 +192,23 @@ function BottomBar({ pathname }: { pathname: string }) {
             />
           </li>
         ))}
-        <li className="min-w-0">
-          <button
-            type="button"
-            aria-expanded={moreOpen}
-            aria-controls="more-menu"
-            onClick={() => setMoreOpen((o) => !o)}
-            className={cn(
-              "flex size-full flex-col items-center justify-center gap-1 text-xs font-medium",
-              moreActive || moreOpen ? "text-accent-text" : "text-text-muted",
-            )}
-          >
-            <Ellipsis className="size-icon" aria-hidden />
-            More
-          </button>
-        </li>
+        {secondary.length ? (
+          <li className="min-w-0 flex-1">
+            <button
+              type="button"
+              aria-expanded={moreOpen}
+              aria-controls="more-menu"
+              onClick={() => setMoreOpen((o) => !o)}
+              className={cn(
+                "flex size-full flex-col items-center justify-center gap-1 text-xs font-medium",
+                moreActive || moreOpen ? "text-accent-text" : "text-text-muted",
+              )}
+            >
+              <Ellipsis className="size-icon" aria-hidden />
+              More
+            </button>
+          </li>
+        ) : null}
       </ul>
     </nav>
   );

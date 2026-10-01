@@ -9,16 +9,16 @@ Build in the stages of spec section 14, in order, and only start a stage once th
 
 ## Current stage
 
-**Stage 0: Foundations. Complete; awaiting sign-off.**
+**Stage 1: Accounts. Complete; awaiting sign-off.** (Stage 0 signed off.)
 
-- Done: Next.js + TypeScript (strict), Tailwind v4 design tokens, every 10.4 component, component
-  gallery at `/dev/components`, light/dark mode with manual toggle, Comfortable/Compact density,
-  app shell with the seven tabs (sidebar ≥1280, icon rail ≥768, bottom bar + "More" on phones),
-  designed empty/loading/error states, Supabase client scaffolding, CI, unit + e2e tests,
-  screenshots at 375/768/1280 in both themes.
-- Next: **Stage 1: Accounts**. Sign-up, sign-in, organisations, roles, invitations, Row Level
-  Security, organisation-isolation tests. Add `src/proxy.ts` (Next 16's renamed middleware) for
-  Supabase session refresh at that point.
+- Done: sign-up, sign-in, sign-out, company onboarding, invitations by link (14-day, single use,
+  hashed), five roles, Users & roles screen, Row Level Security on every table, organisation
+  storage folders, audit log, server-side role checks, 61 database isolation/role tests.
+- Not yet: emailed invitations and password reset (need Resend, a later stage); per-organisation
+  accent colour applied app-wide (Stage 2); GDPR export/deletion (spec 12, later).
+- Next: **Stage 2: Settings**. Depots, unit types, vehicles (capacity matrix), drivers, hauliers
+  and rate cards, postcode zones, thresholds, branding.
+- Open: no hosted Supabase project yet; everything runs against local Supabase.
 
 ## Commands
 
@@ -27,16 +27,31 @@ Build in the stages of spec section 14, in order, and only start a stage once th
 | Dev server                                   | `npm run dev`                           |
 | Lint / typecheck / format                    | `npm run lint` / `typecheck` / `format` |
 | Unit tests (Vitest)                          | `npm test`                              |
+| Database isolation and role tests            | `npm run test:db`                       |
 | End-to-end tests + screenshots               | `npm run test:e2e`                      |
 | Screenshots only (written to `screenshots/`) | `npm run screenshots`                   |
 | Local Supabase (needs Docker)                | `npx supabase start`                    |
+| Rebuild local database from migrations       | `npx supabase db reset`                 |
 
-Playwright builds the app and runs `next start` on port 3100 with `ENABLE_DEV_GALLERY=1`.
+`test:db` and `test:e2e` need local Supabase running; they read its URL and keys from
+`npx supabase status`. In the cloud environment start Docker first (`dockerd &`), then
+`npx supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor,realtime,postgres-meta`.
+Playwright builds the app and runs `next start` on port 3100 with `ENABLE_DEV_GALLERY=1`. A setup
+project creates "Example Doors Ltd" with admin, office, warehouse and driver users and saves their
+sessions in `e2e/.auth/` (gitignored); tests default to the admin.
 In the Claude Code cloud environment, Chromium is preinstalled and `@playwright/test` is pinned to
 1.56.1 to match it; don't run `playwright install` there.
 
 ## Architecture
 
+- `src/app/(auth)/…`: sign-in, sign-up, onboarding (create company), `invite/[token]`. Sign-in and
+  sign-up call Supabase from the browser so its per-IP rate limits apply to each visitor.
+- `src/proxy.ts`: Next 16's middleware. Refreshes the session and sends signed-out visitors to
+  `/sign-in?next=…`. Optimistic only; pages and actions check again.
+- `src/lib/auth/`: `roles.ts` (roles, areas, capabilities: the single source for the UI and
+  actions), `session.ts` (`requireMember`, `requireArea(area)` for pages, `requireCapability(cap)`
+  for server actions), `schemas.ts` (Zod, shared client/server), `errors.ts` (plain-English
+  messages), `redirects.ts` (`safeNext`).
 - `src/app/(app)/…`: the seven tabs (Today, Plan, Orders, Customers, Warehouse, History,
   Settings) inside `AppShell`. Shared `loading.tsx` (skeletons) and `error.tsx` (plain English +
   retry). Pages that depend on "today" call `await connection()` so they render per request.
@@ -54,10 +69,21 @@ In the Claude Code cloud environment, Chromium is preinstalled and `@playwright/
 - `src/lib/services/*`: third-party providers behind small modules so they can be swapped (spec 4).
   `tiles.ts` supports MapTiler/Stadia; never the public OSM tile servers.
 - `src/lib/supabase/*`: browser and server clients (`@supabase/ssr`), publishable key only.
-- `supabase/`: CLI config and (from Stage 1) migrations.
+- `supabase/migrations/`: schema. `private` schema holds RLS helpers (`current_org_id()`,
+  `my_role()`, `has_role(...)`) and triggers; API functions are `create_organisation`,
+  `create_invitation`, `revoke_invitation`, `get_invitation`, `accept_invitation`.
+- `tests/db/`: isolation, role and schema-guard tests against the real database.
 
 ## Conventions
 
+- **Every new table** gets `id`, `organisation_id`, `created_at`, `updated_at`, `created_by`, RLS
+  policies scoped with `private.current_org_id()` (and `private.has_role(...)` for writes), the
+  `private.audit()` trigger if spec 6.14 covers it, and an entry in `TABLES` in
+  `tests/db/isolation.test.ts`. `tests/db/schema.test.ts` fails if RLS or the columns are missing,
+  or if `anon` has any table privilege. Revoke default grants and grant only what's needed.
+- **Roles are enforced three times**: hidden in the UI (`navFor`, `can`), checked in pages and
+  server actions (`requireArea` / `requireCapability`), and enforced by RLS. Never rely on the
+  first alone. Server actions return `{ ok, error }` with plain-English errors.
 - **Design tokens only.** `globals.css` resets Tailwind's scales so only spec values exist:
   spacing 0/px/1/2/3/4/6/8/12/16 (= 4…64px), named sizes (`h-control`, `w-sidebar`, `max-w-panel`…),
   text `xs/sm/base/lg/xl/2xl` (12–32px), weights 400/500/600, radius `sm/md/lg/full`, breakpoints
@@ -86,4 +112,4 @@ In the Claude Code cloud environment, Chromium is preinstalled and `@playwright/
 1. `npm run screenshots`: review every new screen at 375/768/1280 in light and dark
    (`screenshots/<theme>/<width>/`, with per-section gallery images in `gallery/`).
 2. Fix overlaps, overflow, misalignment and inconsistent spacing.
-3. `npm run lint && npm run typecheck && npm test && npm run test:e2e` all pass.
+3. `npm run lint && npm run typecheck && npm test && npm run test:db && npm run test:e2e` all pass.

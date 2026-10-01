@@ -1,5 +1,6 @@
 import { CalendarDays, PackageCheck } from "lucide-react";
 import type { Metadata } from "next";
+import { requireArea } from "@/lib/auth/session";
 import Link from "next/link";
 import { connection } from "next/server";
 import { PageContainer, PageHeader } from "@/components/shell/page";
@@ -11,6 +12,7 @@ import { formatDateLong } from "@/lib/format";
 export const metadata: Metadata = { title: "Warehouse" };
 
 export default async function WarehousePage() {
+  await requireArea("warehouse");
   await connection(); // "today" must be worked out per request
   return (
     <PageContainer>

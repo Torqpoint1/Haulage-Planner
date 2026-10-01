@@ -11,11 +11,14 @@ and the current build stage are in [`CLAUDE.md`](CLAUDE.md).
 
 ```bash
 npm install
-cp .env.example .env.local   # optional until Stage 1
+npx supabase start           # local Postgres, Auth and Storage (needs Docker)
+cp .env.example .env.local   # then paste the publishable key from `npx supabase status`
 npm run dev
 ```
 
-Open http://localhost:3000. The component gallery is at http://localhost:3000/dev/components.
+Open http://localhost:3000, create an account and set up your company.
+
+The component gallery is at http://localhost:3000/dev/components.
 
 ## Checks
 
@@ -23,6 +26,7 @@ Open http://localhost:3000. The component gallery is at http://localhost:3000/de
 npm run lint
 npm run typecheck
 npm test            # unit tests (Vitest)
+npm run test:db     # organisation isolation and role tests (needs local Supabase)
 npm run test:e2e    # end-to-end tests and screenshots (Playwright)
 ```
 
