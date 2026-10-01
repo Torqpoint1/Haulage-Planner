@@ -1,0 +1,89 @@
+import {
+  Building,
+  FileUp,
+  Handshake,
+  IdCard,
+  Map,
+  Package,
+  Repeat,
+  ShieldAlert,
+  SlidersHorizontal,
+  Truck,
+  Users,
+  Warehouse,
+  type LucideIcon,
+} from "lucide-react";
+import type { Metadata } from "next";
+import { PageContainer, PageHeader } from "@/components/shell/page";
+import { Card } from "@/components/ui/card";
+
+export const metadata: Metadata = { title: "Settings" };
+
+const SECTIONS: { title: string; description: string; icon: LucideIcon }[] = [
+  {
+    title: "Organisation & branding",
+    description: "Name, logo, accent colour and timezone.",
+    icon: Building,
+  },
+  { title: "Depots", description: "Factories and warehouses you load from.", icon: Warehouse },
+  {
+    title: "Users & roles",
+    description: "Invite people and choose what they can do.",
+    icon: Users,
+  },
+  {
+    title: "Handling unit types",
+    description: "Pallets, stillages, door packs and how they travel.",
+    icon: Package,
+  },
+  { title: "Vehicles", description: "Your fleet, capacities and unloading methods.", icon: Truck },
+  { title: "Drivers", description: "Licences, contact details and availability.", icon: IdCard },
+  {
+    title: "Hauliers & rate cards",
+    description: "Outside hauliers, pallet networks and their prices.",
+    icon: Handshake,
+  },
+  {
+    title: "Postcode zones",
+    description: "Group postcode areas for rates and planning.",
+    icon: Map,
+  },
+  { title: "Standing runs", description: "Routine routes that repeat each week.", icon: Repeat },
+  {
+    title: "Warning thresholds",
+    description: "When checks turn amber or block a load.",
+    icon: SlidersHorizontal,
+  },
+  { title: "Compliance zones", description: "London and clean air zone rules.", icon: ShieldAlert },
+  {
+    title: "Import/export",
+    description: "Bring data in from spreadsheets, or export it all.",
+    icon: FileUp,
+  },
+];
+
+export default function SettingsPage() {
+  return (
+    <PageContainer>
+      <PageHeader
+        title="Settings"
+        description="Set up once; a new customer is a setup job, never a code change."
+      />
+      <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {SECTIONS.map(({ title, description, icon: Icon }) => (
+          <li key={title} className="min-w-0">
+            <Card className="flex h-full items-start gap-4 p-4">
+              <span className="flex size-control shrink-0 items-center justify-center rounded-md bg-surface-muted text-text-muted">
+                <Icon className="size-icon" aria-hidden />
+              </span>
+              <span className="flex min-w-0 flex-col gap-1">
+                <span className="text-sm font-semibold">{title}</span>
+                <span className="text-sm text-text-muted">{description}</span>
+              </span>
+            </Card>
+          </li>
+        ))}
+      </ul>
+    </PageContainer>
+  );
+}

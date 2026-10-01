@@ -1,0 +1,501 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens (spec section 10). This file is the single source of truth.
+ *
+ * Tailwind's default scales are reset with `initial` so that only the values
+ * allowed by the spec exist as utilities. A class like `p-5`, `text-3xl` or
+ * `font-bold` simply does not compile, which stops one-off values creeping in.
+ */
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme static {
+  /* ---- Spacing (10.2): 4px base, only 4/8/12/16/24/32/48/64 ---- */
+  --spacing: initial;
+  --spacing-*: initial;
+  --spacing-0: 0px;
+  --spacing-px: 1px;
+  --spacing-1: 4px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-6: 24px;
+  --spacing-8: 32px;
+  --spacing-12: 48px;
+  --spacing-16: 64px;
+  /* Component sizes (not spacing): controls, tap targets, panels */
+  --spacing-control-sm: 32px;
+  --spacing-control: 40px;
+  --spacing-control-lg: 48px;
+  --spacing-icon-sm: 16px;
+  --spacing-icon: 20px;
+  --spacing-avatar-sm: 24px;
+  --spacing-avatar: 32px;
+  --spacing-avatar-lg: 40px;
+  --spacing-sidebar: 240px;
+  --spacing-rail: 72px;
+  --spacing-bottombar: 64px;
+  --spacing-header: 64px;
+  --spacing-panel: 480px;
+  --spacing-modal: 520px;
+  --spacing-popover: 288px;
+  --spacing-menu: 192px;
+  --spacing-content: 1280px;
+
+  /* ---- Typography (10.1): 12/14/16/20/24/32, weights 400/500/600 ---- */
+  --font-*: initial;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --text-*: initial;
+  --text-xs: 12px;
+  --text-xs--line-height: 1.5;
+  --text-sm: 14px;
+  --text-sm--line-height: 1.5;
+  --text-base: 16px;
+  --text-base--line-height: 1.5;
+  --text-lg: 20px;
+  --text-lg--line-height: 1.25;
+  --text-xl: 24px;
+  --text-xl--line-height: 1.25;
+  --text-2xl: 32px;
+  --text-2xl--line-height: 1.25;
+
+  --font-weight-*: initial;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+
+  --leading-*: initial;
+  --leading-body: 1.5;
+  --leading-heading: 1.25;
+  --leading-none: 1;
+
+  /* ---- Radius & shadow (10.2): cards 12, shadow only on raised elements ---- */
+  --radius-*: initial;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 9999px;
+
+  --shadow-*: initial;
+  --shadow-raised: 0 4px 12px -2px rgb(16 24 40 / 0.12), 0 2px 4px -2px rgb(16 24 40 / 0.08);
+  --shadow-overlay: 0 16px 32px -8px rgb(16 24 40 / 0.2), 0 4px 8px -4px rgb(16 24 40 / 0.1);
+
+  /* ---- Breakpoints (10.7): 375 phone, 768 tablet, 1280 desktop ---- */
+  --breakpoint-*: initial;
+  --breakpoint-md: 768px;
+  --breakpoint-xl: 1280px;
+}
+
+/* Colour utilities map to runtime CSS variables so light/dark mode and the
+   per-organisation accent can change without rebuilding. */
+@theme inline {
+  --color-*: initial;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+  --color-white: #ffffff;
+  --color-black: #000000;
+
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-raised: var(--surface-raised);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-text-subtle: var(--text-subtle);
+  --color-overlay: var(--overlay);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-subtle: var(--accent-subtle);
+  --color-accent-text: var(--accent-text);
+  --color-focus: var(--focus);
+
+  --color-danger: var(--danger);
+  --color-danger-fg: var(--danger-fg);
+  --color-danger-bg: var(--danger-bg);
+  --color-danger-border: var(--danger-border);
+  --color-danger-solid: var(--danger-solid);
+  --color-danger-solid-hover: var(--danger-solid-hover);
+  --color-warning: var(--warning);
+  --color-warning-fg: var(--warning-fg);
+  --color-warning-bg: var(--warning-bg);
+  --color-warning-border: var(--warning-border);
+  --color-success: var(--success);
+  --color-success-fg: var(--success-fg);
+  --color-success-bg: var(--success-bg);
+  --color-success-border: var(--success-border);
+  --color-info: var(--info);
+  --color-info-fg: var(--info-fg);
+  --color-info-bg: var(--info-bg);
+  --color-info-border: var(--info-border);
+
+  --color-load-1: var(--load-1);
+  --color-load-2: var(--load-2);
+  --color-load-3: var(--load-3);
+  --color-load-4: var(--load-4);
+  --color-load-5: var(--load-5);
+  --color-load-6: var(--load-6);
+  --color-load-7: var(--load-7);
+  --color-load-8: var(--load-8);
+  --color-load-9: var(--load-9);
+  --color-load-10: var(--load-10);
+}
+
+/* ------------------------------------------------------------------ */
+/* Light theme                                                         */
+/* ------------------------------------------------------------------ */
+:root {
+  color-scheme: light;
+
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-muted: #f0f2f5;
+  --surface-raised: #ffffff;
+  --border: #e1e5ea;
+  --border-strong: #c4cad3;
+  --text: #15191f;
+  --text-muted: #48515e;
+  --text-subtle: #5f6876;
+  --overlay: rgb(15 20 28 / 0.45);
+
+  /* Accent defaults to deep blue; overridden per organisation at runtime. */
+  --accent: #1d4ed8;
+  --accent-hover: #1a45be;
+  --accent-fg: #ffffff;
+  --accent-subtle: #e8edfb;
+  --accent-text: #1d4ed8;
+  --focus: #1d4ed8;
+
+  /* Status colours carry meaning only (10.3) */
+  --danger: #c4320a;
+  --danger-fg: #b42318;
+  --danger-bg: #fef3f2;
+  --danger-border: #fdb4ac;
+  --danger-solid: #c8281c;
+  --danger-solid-hover: #ad2015;
+  --warning: #dc6803;
+  --warning-fg: #8a3a07;
+  --warning-bg: #fffaeb;
+  --warning-border: #fbd27a;
+  --success: #079455;
+  --success-fg: #05603a;
+  --success-bg: #ecfdf3;
+  --success-border: #9fe3bd;
+  --info: #1570ef;
+  --info-fg: #1849a9;
+  --info-bg: #eff6ff;
+  --info-border: #a9d1fb;
+
+  /* Fixed palette of 10 distinguishable load colours for the map (10.3) */
+  --load-1: #2563eb;
+  --load-2: #d97706;
+  --load-3: #059669;
+  --load-4: #db2777;
+  --load-5: #7c3aed;
+  --load-6: #0891b2;
+  --load-7: #65a30d;
+  --load-8: #b91c1c;
+  --load-9: #475569;
+  --load-10: #c2410c;
+
+  /* Density (10.5): comfortable by default */
+  --row-height: 48px;
+  --cell-py: 12px;
+  --cell-px: 16px;
+  --card-padding: 16px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Dark theme                                                          */
+/* ------------------------------------------------------------------ */
+.dark {
+  color-scheme: dark;
+
+  --bg: #0d1015;
+  --surface: #151920;
+  --surface-muted: #1c2129;
+  --surface-raised: #1f242d;
+  --border: #2a303a;
+  --border-strong: #404855;
+  --text: #e7eaee;
+  --text-muted: #b2b9c4;
+  --text-subtle: #959dab;
+  --overlay: rgb(0 0 0 / 0.6);
+
+  --accent: #2e5bdb;
+  --accent-hover: #2850c1;
+  --accent-fg: #ffffff;
+  --accent-subtle: #162341;
+  --accent-text: #8fb0f7;
+  --focus: #6f94f4;
+
+  --danger: #f97066;
+  --danger-fg: #fda29b;
+  --danger-bg: #2b1513;
+  --danger-border: #6e2a24;
+  --danger-solid: #d92d20;
+  --danger-solid-hover: #b42318;
+  --warning: #fdb022;
+  --warning-fg: #fec84b;
+  --warning-bg: #2a1f0b;
+  --warning-border: #6b4a12;
+  --success: #32d583;
+  --success-fg: #75e0a7;
+  --success-bg: #0c2318;
+  --success-border: #1b6141;
+  --info: #53b1fd;
+  --info-fg: #84caff;
+  --info-bg: #0c1c33;
+  --info-border: #1f4c80;
+
+  --load-1: #60a5fa;
+  --load-2: #fbbf24;
+  --load-3: #34d399;
+  --load-4: #f472b6;
+  --load-5: #a78bfa;
+  --load-6: #22d3ee;
+  --load-7: #a3e635;
+  --load-8: #f87171;
+  --load-9: #94a3b8;
+  --load-10: #fb923c;
+}
+
+[data-density="compact"] {
+  --row-height: 36px;
+  --cell-py: 8px;
+  --cell-px: 12px;
+  --card-padding: 12px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Base                                                                */
+/* ------------------------------------------------------------------ */
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: 1.5;
+    font-weight: 400;
+    /* Tabular numbers everywhere (10.1) so figures line up in tables */
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    line-height: 1.25;
+    font-weight: 600;
+  }
+
+  *,
+  ::before,
+  ::after {
+    border-color: var(--border);
+  }
+
+  /* Visible focus rings for keyboard users (10.9) */
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--accent-subtle);
+    color: var(--text);
+  }
+}
+
+@layer utilities {
+  /* Numbers never wrap (10.7) */
+  .num {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+
+  /* Phone safe area for the bottom navigation bar */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Leaflet: keep its internal z-indexes from escaping above menus and panels.
+   `:root` raises specificity above leaflet.css, which loads later. */
+:root .leaflet-container {
+  isolation: isolate;
+  font-family: var(--font-sans);
+  background: var(--surface-muted);
+}
+
+/* Map features use the fixed load palette via classes, because SVG
+   presentation attributes can't read CSS variables. */
+.map-stroke-load-1 {
+  stroke: var(--load-1);
+}
+.map-fill-load-1 {
+  fill: var(--load-1);
+  stroke: var(--surface);
+}
+.map-dot-load-1 {
+  background: var(--load-1);
+}
+.map-stroke-load-2 {
+  stroke: var(--load-2);
+}
+.map-fill-load-2 {
+  fill: var(--load-2);
+  stroke: var(--surface);
+}
+.map-dot-load-2 {
+  background: var(--load-2);
+}
+.map-stroke-load-3 {
+  stroke: var(--load-3);
+}
+.map-fill-load-3 {
+  fill: var(--load-3);
+  stroke: var(--surface);
+}
+.map-dot-load-3 {
+  background: var(--load-3);
+}
+.map-stroke-load-4 {
+  stroke: var(--load-4);
+}
+.map-fill-load-4 {
+  fill: var(--load-4);
+  stroke: var(--surface);
+}
+.map-dot-load-4 {
+  background: var(--load-4);
+}
+.map-stroke-load-5 {
+  stroke: var(--load-5);
+}
+.map-fill-load-5 {
+  fill: var(--load-5);
+  stroke: var(--surface);
+}
+.map-dot-load-5 {
+  background: var(--load-5);
+}
+.map-stroke-load-6 {
+  stroke: var(--load-6);
+}
+.map-fill-load-6 {
+  fill: var(--load-6);
+  stroke: var(--surface);
+}
+.map-dot-load-6 {
+  background: var(--load-6);
+}
+.map-stroke-load-7 {
+  stroke: var(--load-7);
+}
+.map-fill-load-7 {
+  fill: var(--load-7);
+  stroke: var(--surface);
+}
+.map-dot-load-7 {
+  background: var(--load-7);
+}
+.map-stroke-load-8 {
+  stroke: var(--load-8);
+}
+.map-fill-load-8 {
+  fill: var(--load-8);
+  stroke: var(--surface);
+}
+.map-dot-load-8 {
+  background: var(--load-8);
+}
+.map-stroke-load-9 {
+  stroke: var(--load-9);
+}
+.map-fill-load-9 {
+  fill: var(--load-9);
+  stroke: var(--surface);
+}
+.map-dot-load-9 {
+  background: var(--load-9);
+}
+.map-stroke-load-10 {
+  stroke: var(--load-10);
+}
+.map-fill-load-10 {
+  fill: var(--load-10);
+  stroke: var(--surface);
+}
+.map-dot-load-10 {
+  background: var(--load-10);
+}
+.map-stroke-neutral {
+  stroke: var(--text-subtle);
+}
+.map-fill-neutral {
+  fill: var(--text-subtle);
+  stroke: var(--surface);
+}
+.map-dot-neutral {
+  background: var(--text-subtle);
+}
+.map-pin {
+  cursor: pointer;
+}
+.map-pin-selected {
+  stroke: var(--text);
+}
+.leaflet-container .leaflet-tooltip {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  color: var(--text);
+  font-size: 12px;
+  box-shadow: 0 4px 12px -2px rgb(16 24 40 / 0.16);
+}
+.leaflet-container .leaflet-tooltip-top::before {
+  border-top-color: var(--surface-raised);
+}
+.leaflet-container .leaflet-bar a {
+  background: var(--surface-raised);
+  color: var(--text);
+  border-color: var(--border);
+}
+.leaflet-container .leaflet-bar a:hover {
+  background: var(--surface-muted);
+}
+.leaflet-container .leaflet-control-attribution {
+  background: var(--surface-raised);
+  color: var(--text-muted);
+}
+.leaflet-container .leaflet-control-attribution a {
+  color: var(--accent-text);
+}
