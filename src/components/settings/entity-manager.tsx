@@ -22,7 +22,7 @@ type EntityManagerProps<T> = {
   label: string;
   columns: Column<T>[];
   /** Stacked view for phones and tablets; receives the edit/delete buttons. */
-  renderCard: (row: T, actions: React.ReactNode) => React.ReactNode;
+  renderCard: (row: T, actions: React.ReactNode | null) => React.ReactNode;
   /** Form fields for a new (null) or existing row. */
   renderFields: (row: T | null) => React.ReactNode;
   save: (id: string | null, formData: FormData) => Promise<FormState>;
@@ -39,6 +39,18 @@ type EntityManagerProps<T> = {
   /** Extra empty-state action, e.g. "Add common pallets". */
   emptyAction?: React.ReactNode;
   initialSort?: React.ComponentProps<typeof DataTable<T>>["initialSort"];
+  /** View only: hides add, edit and delete (e.g. office staff, spec 3). */
+  readOnly?: boolean;
+  /** Search and filters shown left of the Add button. */
+  toolbar?: React.ReactNode;
+  /** Replaces the empty state, e.g. "No customers match your search". */
+  emptyOverride?: React.ReactNode;
+  /** Hide the "3 vehicles" count (when the toolbar shows its own). */
+  hideCount?: boolean;
+  /** Name of the add button's thing if different from `singular`. */
+  addLabel?: string;
+  /** Called after a successful save, e.g. to add a follow-up message. */
+  onSaved?: (state: FormState) => void;
 };
 
 /**
@@ -62,6 +74,12 @@ export function EntityManager<T>({
   extraActions,
   emptyAction,
   initialSort,
+  readOnly,
+  toolbar,
+  emptyOverride,
+  hideCount,
+  addLabel,
+  onSaved,
 }: EntityManagerProps<T>) {
   const router = useRouter();
   const formId = useId().replace(/:/g, "");
@@ -95,33 +113,45 @@ export function EntityManager<T>({
     </span>
   );
 
-  const allColumns: Column<T>[] = [
-    ...columns,
-    {
-      id: "actions",
-      header: "Actions",
-      align: "right",
-      hideable: false,
-      cell: (row) => actions(row),
-    },
-  ];
+  const allColumns: Column<T>[] = readOnly
+    ? columns
+    : [
+        ...columns,
+        {
+          id: "actions",
+          header: "Actions",
+          align: "right",
+          hideable: false,
+          cell: (row) => actions(row),
+        },
+      ];
+  const addText = `Add ${addLabel ?? singular}`;
 
-  const title = editing?.row ? `Edit ${getName(editing.row)}` : `Add ${singular}`;
-  const Capital = singular.charAt(0).toUpperCase() + singular.slice(1);
+  const title = editing?.row ? `Edit ${getName(editing.row)}` : `Add ${addLabel ?? singular}`;
+  const word = addLabel ?? singular;
+  const Capital = word.charAt(0).toUpperCase() + word.slice(1);
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <p className="text-sm text-text-muted">
-          <span className="num">{rows.length}</span> {rows.length === 1 ? singular : `${singular}s`}
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {extraActions}
-          <Button variant="primary" onClick={() => open(null)}>
-            <Plus aria-hidden />
-            Add {singular}
-          </Button>
-        </div>
+        {toolbar ? (
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">{toolbar}</div>
+        ) : null}
+        {hideCount ? null : (
+          <p className="text-sm text-text-muted">
+            <span className="num">{rows.length}</span>{" "}
+            {rows.length === 1 ? singular : `${singular}s`}
+          </p>
+        )}
+        {readOnly ? null : (
+          <div className="flex flex-wrap gap-2">
+            {extraActions}
+            <Button variant="primary" onClick={() => open(null)}>
+              <Plus aria-hidden />
+              {addText}
+            </Button>
+          </div>
+        )}
       </div>
 
       <DataTable
@@ -130,21 +160,25 @@ export function EntityManager<T>({
         rows={rows}
         getRowId={getId}
         initialSort={initialSort}
-        renderCard={(row) => renderCard(row, actions(row))}
+        renderCard={(row) => renderCard(row, readOnly ? null : actions(row))}
         empty={
-          <EmptyState
-            compact
-            icon={empty.icon}
-            title={empty.title}
-            description={empty.description}
-            action={
-              <Button variant="primary" onClick={() => open(null)}>
-                <Plus aria-hidden />
-                Add {singular}
-              </Button>
-            }
-            secondaryAction={emptyAction}
-          />
+          emptyOverride ?? (
+            <EmptyState
+              compact
+              icon={empty.icon}
+              title={empty.title}
+              description={empty.description}
+              action={
+                readOnly ? undefined : (
+                  <Button variant="primary" onClick={() => open(null)}>
+                    <Plus aria-hidden />
+                    {addText}
+                  </Button>
+                )
+              }
+              secondaryAction={readOnly ? undefined : emptyAction}
+            />
+          )
         }
       />
 
@@ -156,7 +190,7 @@ export function EntityManager<T>({
           <>
             <Button onClick={() => setEditing(null)}>Cancel</Button>
             <Button type="submit" form={formId} variant="primary" loading={saving}>
-              Save {singular}
+              Save {addLabel ?? singular}
             </Button>
           </>
         }
@@ -167,8 +201,9 @@ export function EntityManager<T>({
             id={formId}
             action={(formData) => save(editing.row ? getId(editing.row) : null, formData)}
             onPendingChange={setSaving}
-            onSaved={() => {
+            onSaved={(state) => {
               toast.success(`${Capital} saved`);
+              onSaved?.(state);
               setEditing(null);
               router.refresh();
             }}
@@ -224,7 +259,7 @@ export function EntityCard({
   title: React.ReactNode;
   lines?: React.ReactNode[];
   badges?: React.ReactNode;
-  actions: React.ReactNode;
+  actions: React.ReactNode | null;
   leading?: React.ReactNode;
 }) {
   return (

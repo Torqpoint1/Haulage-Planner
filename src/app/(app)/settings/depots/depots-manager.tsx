@@ -1,14 +1,14 @@
 "use client";
 
 import { MapPinOff, Warehouse } from "lucide-react";
-import { FieldRow, FormField, FormSection, useFormErrors } from "@/components/settings/entity-form";
+import { FieldRow, FormField, FormSection } from "@/components/settings/entity-form";
 import { EntityCard, EntityManager } from "@/components/settings/entity-manager";
-import { CheckboxGroup } from "@/components/settings/inputs";
+import { CheckboxGroup, WeeklyHoursFields } from "@/components/settings/inputs";
 import { Badge } from "@/components/ui/badge";
 import { Input, Textarea } from "@/components/ui/input";
 import type { Column } from "@/components/ui/table";
 import { Toggle } from "@/components/ui/toggle";
-import { DAYS, LOADING_EQUIPMENT, labelFor } from "@/lib/settings/options";
+import { LOADING_EQUIPMENT, labelFor } from "@/lib/settings/options";
 import { summariseHours } from "@/lib/settings/hours";
 import type { OpeningHours } from "@/lib/settings/schemas";
 import { deleteDepot, saveDepot } from "./actions";
@@ -68,56 +68,6 @@ const columns: Column<Depot>[] = [
   { id: "equipment", header: "Loading equipment", cell: equipment },
 ];
 
-function HoursFields({ hours }: { hours: OpeningHours }) {
-  const { errors } = useFormErrors();
-  return (
-    <div className="flex flex-col gap-3">
-      {DAYS.map(({ value, label }) => {
-        const h = hours[value];
-        const error = errors[`hours_${value}`];
-        return (
-          <div key={value} className="flex min-w-0 flex-col gap-1">
-            <div className="flex flex-col gap-2 md:flex-row md:items-center">
-              <span
-                className="w-control-lg shrink-0 text-sm font-medium md:w-menu"
-                id={`day-${value}`}
-              >
-                {label}
-              </span>
-              <div className="flex min-w-0 items-center gap-2">
-                <Input
-                  type="time"
-                  name={`hours_${value}_open`}
-                  defaultValue={h?.open ?? ""}
-                  aria-label={`${label} opens`}
-                  invalid={Boolean(error)}
-                  className="num"
-                />
-                <span className="text-sm text-text-subtle" aria-hidden>
-                  to
-                </span>
-                <Input
-                  type="time"
-                  name={`hours_${value}_close`}
-                  defaultValue={h?.close ?? ""}
-                  aria-label={`${label} closes`}
-                  invalid={Boolean(error)}
-                  className="num"
-                />
-              </div>
-            </div>
-            {error ? (
-              <p role="alert" className="text-sm text-danger-fg">
-                {error}
-              </p>
-            ) : null}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 function Fields({ row }: { row: Depot | null }) {
   const d = row;
   return (
@@ -160,7 +110,7 @@ function Fields({ row }: { row: Depot | null }) {
         />
       </FormSection>
       <FormSection title="Opening hours" description="Leave both times blank on days it's closed.">
-        <HoursFields hours={d?.opening_hours ?? defaultHours()} />
+        <WeeklyHoursFields prefix="hours" hours={d?.opening_hours ?? defaultHours()} />
       </FormSection>
       <FormSection title="Notes">
         <FormField name="notes" label="Notes for planners">

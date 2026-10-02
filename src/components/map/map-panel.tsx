@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cn";
 import { getTileConfig } from "@/lib/services/tiles";
-import type { MapPin, MapRoute } from "./types";
+import type { EditablePin, MapPin, MapRoute } from "./types";
 
 // Leaflet touches `window`, so it only ever loads in the browser.
 const MapCanvas = dynamic(() => import("./map-canvas"), {
@@ -26,6 +26,8 @@ type MapPanelProps = {
   onClose?: () => void;
   /** Shown over the map when there is nothing to plot (10.6). */
   emptyMessage?: string;
+  /** A draggable pin for correcting a location. */
+  editable?: EditablePin | null;
   className?: string;
 };
 
@@ -42,6 +44,7 @@ export function MapPanel({
   legend,
   onClose,
   emptyMessage = "Nothing to show on the map yet.",
+  editable,
   className,
 }: MapPanelProps) {
   const { resolvedTheme } = useTheme();
@@ -72,9 +75,10 @@ export function MapPanel({
           tiles={tiles}
           selectedId={selectedId}
           onSelect={onSelect}
+          editable={editable}
           label={title}
         />
-        {pins.length === 0 && routes.length === 0 ? (
+        {pins.length === 0 && routes.length === 0 && !editable ? (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4">
             <p className="flex items-center gap-2 rounded-md border border-border bg-surface-raised px-3 py-2 text-sm text-text-muted">
               <MapPinned className="size-icon-sm shrink-0" aria-hidden />

@@ -36,16 +36,16 @@ import {
 
 export type Parsed<T> = { ok: true; data: T } | { ok: false; errors: Record<string, string> };
 
-const values = <T extends string>(list: readonly { value: T }[]) => list.map((o) => o.value);
+export const values = <T extends string>(list: readonly { value: T }[]) => list.map((o) => o.value);
 
-function parse<S extends z.ZodType>(schema: S, input: FormObject): Parsed<z.output<S>> {
+export function parse<S extends z.ZodType>(schema: S, input: FormObject): Parsed<z.output<S>> {
   const result = schema.safeParse(input);
   return result.success
     ? { ok: true, data: result.data }
     : { ok: false, errors: errorsByField(result.error) };
 }
 
-const postcode = z.preprocess(
+export const postcode = z.preprocess(
   (v) => (typeof v === "string" ? (normalisePostcode(v) ?? v) : v),
   z
     .string("Enter a postcode.")
@@ -73,7 +73,7 @@ const areaList = (label: string) =>
     }),
   );
 
-const phone = optionalText(20).refine(
+export const phone = optionalText(20).refine(
   (v) => /^[0-9 +()-]*$/.test(v),
   "Use digits, spaces and + ( ) - only.",
 );
@@ -97,30 +97,44 @@ const depotBase = z.object({
   notes: optionalText(2000),
 });
 
+/**
+ * Weekly hours from inputs named `<prefix>_<day>_open` / `<prefix>_<day>_close`.
+ * Both blank means closed that day. Errors are keyed `<prefix>_<day>`.
+ */
+export function parseWeeklyHours(
+  input: FormObject,
+  prefix: string,
+  { closedWord = "closed", closeWord = "closing" } = {},
+): { hours: OpeningHours; errors: Record<string, string> } {
+  const hours: OpeningHours = {};
+  const errors: Record<string, string> = {};
+  for (const { value: day, label } of DAYS) {
+    const open = String(input[`${prefix}_${day}_open`] ?? "").trim();
+    const close = String(input[`${prefix}_${day}_close`] ?? "").trim();
+    if (!open && !close) {
+      hours[day] = null;
+      continue;
+    }
+    if (!TIME.test(open) || !TIME.test(close)) {
+      errors[`${prefix}_${day}`] =
+        `Enter both times for ${label} as hh:mm, or leave both blank if ${closedWord}.`;
+    } else if (close <= open) {
+      errors[`${prefix}_${day}`] = `${label}: ${closeWord} time must be after the start.`;
+    } else {
+      hours[day] = { open, close };
+    }
+  }
+  return { hours, errors };
+}
+
 export function parseDepot(
   input: FormObject,
 ): Parsed<z.output<typeof depotBase> & { opening_hours: OpeningHours }> {
   const base = parse(depotBase, input);
-  const errors: Record<string, string> = base.ok ? {} : { ...base.errors };
-  const opening_hours: OpeningHours = {};
-  for (const { value: day, label } of DAYS) {
-    const open = String(input[`hours_${day}_open`] ?? "").trim();
-    const close = String(input[`hours_${day}_close`] ?? "").trim();
-    if (!open && !close) {
-      opening_hours[day] = null;
-      continue;
-    }
-    if (!TIME.test(open) || !TIME.test(close)) {
-      errors[`hours_${day}`] =
-        `Enter both times for ${label} as hh:mm, or leave both blank if closed.`;
-    } else if (close <= open) {
-      errors[`hours_${day}`] = `${label}: closing time must be after opening time.`;
-    } else {
-      opening_hours[day] = { open, close };
-    }
-  }
+  const { hours, errors: hourErrors } = parseWeeklyHours(input, "hours");
+  const errors: Record<string, string> = { ...(base.ok ? {} : base.errors), ...hourErrors };
   if (!base.ok || Object.keys(errors).length) return { ok: false, errors };
-  return { ok: true, data: { ...base.data, opening_hours } };
+  return { ok: true, data: { ...base.data, opening_hours: hours } };
 }
 
 // ---------------------------------------------------------------------------

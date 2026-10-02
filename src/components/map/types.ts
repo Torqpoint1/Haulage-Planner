@@ -30,3 +30,13 @@ export type MapRoute = {
 export function loadColour(index: number): MapColour {
   return `load-${(index % 10) + 1}` as MapColour;
 }
+
+/** A pin the person can drag (or click the map) to correct a location. */
+export type EditablePin = {
+  lat: number;
+  lng: number;
+  label: string;
+  onMove: (lat: number, lng: number) => void;
+  /** Bump to re-centre the map on the pin, e.g. after "Reset to postcode". */
+  version?: number;
+};

@@ -25,19 +25,28 @@ export default defineConfig({
       dependencies: ["setup"],
     },
   ],
-  webServer: {
-    // Production build against the local Supabase (`npx supabase start`). The gallery
-    // is enabled explicitly because it is dev-only otherwise.
-    command: `npm run build && npx next start -p ${PORT}`,
-    url: `http://localhost:${PORT}/sign-in`,
-    reuseExistingServer: !process.env.CI,
-    timeout: 300_000,
-    env: {
-      ENABLE_DEV_GALLERY: "1",
-      NEXT_TELEMETRY_DISABLED: "1",
-      NEXT_PUBLIC_SUPABASE_URL: supabase.apiUrl,
-      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: supabase.publishableKey,
-      NEXT_PUBLIC_SITE_URL: `http://localhost:${PORT}`,
+  webServer: [
+    {
+      // Stand-in for postcodes.io (see e2e/support/mock-postcodes.mjs).
+      command: "node e2e/support/mock-postcodes.mjs",
+      url: "http://localhost:3199/health",
+      reuseExistingServer: !process.env.CI,
     },
-  },
+    {
+      // Production build against the local Supabase (`npx supabase start`). The gallery
+      // is enabled explicitly because it is dev-only otherwise.
+      command: `npm run build && npx next start -p ${PORT}`,
+      url: `http://localhost:${PORT}/sign-in`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 300_000,
+      env: {
+        ENABLE_DEV_GALLERY: "1",
+        NEXT_TELEMETRY_DISABLED: "1",
+        NEXT_PUBLIC_SUPABASE_URL: supabase.apiUrl,
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: supabase.publishableKey,
+        NEXT_PUBLIC_SITE_URL: `http://localhost:${PORT}`,
+        POSTCODES_API_URL: "http://localhost:3199",
+      },
+    },
+  ],
 });

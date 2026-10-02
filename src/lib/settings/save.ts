@@ -1,5 +1,6 @@
 import "server-only";
 import { revalidatePath } from "next/cache";
+import type { Capability } from "@/lib/auth/roles";
 import { NotAllowedError, requireCapability } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import type { DeleteResult, FormState } from "./result";
@@ -31,11 +32,19 @@ export function describeDbError(error: DbError, unique: UniqueMessages = {}): Fo
 }
 
 /** Runs a settings action for admins only; anything unexpected becomes a friendly error. */
-export async function asAdmin<T extends FormState | DeleteResult>(
+export function asAdmin<T extends FormState | DeleteResult>(
+  run: () => Promise<T>,
+): Promise<T | { ok: false; error: string }> {
+  return withCapability("settings.manage", run);
+}
+
+/** Runs an action only for roles with `capability` (checked on the server, spec 3). */
+export async function withCapability<T extends FormState | DeleteResult>(
+  capability: Capability,
   run: () => Promise<T>,
 ): Promise<T | { ok: false; error: string }> {
   try {
-    await requireCapability("settings.manage");
+    await requireCapability(capability);
     return await run();
   } catch (error) {
     if (error instanceof NotAllowedError) return { ok: false, error: error.message };

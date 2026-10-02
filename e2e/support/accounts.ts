@@ -53,6 +53,7 @@ export async function createCompany(
     created[m.role] = user.email;
   }
   await seedSettings(admin.client);
+  await seedCustomers(admin.client);
   return { adminEmail: admin.email, members: created };
 }
 
@@ -270,5 +271,113 @@ async function seedSettings(client: Client) {
     ...prices(west, 28, 34, 42.5),
     ...prices(wales, 31, 38, 47),
     ...prices(midlands, 33, 40, 49.5),
+  ]);
+}
+
+/** Fictional customers with a realistic mix of site restrictions (spec 13). */
+async function seedCustomers(client: Client) {
+  const [hillside, marlow, severn, oakfield] = await insert(client, "customers", [
+    {
+      name: "Hillside Builders",
+      account_ref: "HB001",
+      default_delivery_instructions: "Call 30 minutes before arrival.",
+    },
+    { name: "Marlow Joinery", account_ref: "MJ014" },
+    {
+      name: "Severn Timber Merchants",
+      account_ref: "STM07",
+      notes: "Pay on account. Prefers morning deliveries.",
+    },
+    { name: "Oakfield Homes", account_ref: "OAK22" },
+  ]);
+  const weekday = { open: "07:30", close: "16:30" };
+  const week = { mon: weekday, tue: weekday, wed: weekday, thu: weekday, fri: weekday };
+  const recently = new Date(Date.now() - 20 * 86_400_000).toISOString();
+  const [, marlowSite] = await insert(client, "sites", [
+    {
+      customer_id: hillside,
+      name: "Stroud yard",
+      postcode: "GL5 3QF",
+      latitude: 51.73602,
+      longitude: -2.22381,
+      location_source: "postcode",
+      address: "Hillside Yard, London Road, Stroud",
+      site_equipment: ["forklift"],
+      opening_hours: week,
+      last_verified_at: recently,
+    },
+    {
+      customer_id: marlow,
+      name: "Gloucester workshop",
+      postcode: "GL1 2BB",
+      latitude: 51.86142,
+      longitude: -2.24412,
+      location_source: "postcode",
+      address: "Unit 7, Bristol Road, Gloucester",
+      handball_allowed: true,
+      handball_people: 2,
+      no_hgvs: true,
+      narrow_access_note: "Narrow lane; reverse in from the main road.",
+      opening_hours: week,
+      last_verified_at: "2025-11-04T10:00:00Z",
+    },
+    {
+      customer_id: severn,
+      name: "Newport depot",
+      postcode: "NP20 4AA",
+      latitude: 51.58731,
+      longitude: -2.99771,
+      location_source: "postcode",
+      site_equipment: ["forklift", "moffett"],
+      booking_required: true,
+      booking_lead_hours: 24,
+      how_to_book: "Email goods-in with the PO number.",
+      ppe_required: true,
+      opening_hours: week,
+      delivery_windows: {
+        mon: { open: "07:30", close: "11:00" },
+        tue: { open: "07:30", close: "11:00" },
+      },
+      last_verified_at: recently,
+    },
+    {
+      customer_id: oakfield,
+      name: "Plot 14, Meadow View",
+      postcode: "SN1 4DD",
+      latitude: 51.56291,
+      longitude: -1.78104,
+      location_source: "postcode",
+      max_vehicle_type: "7.5t",
+      max_length_m: 9,
+      height_limit_m: 3.8,
+      induction_required: true,
+      ppe_required: true,
+      contact_must_be_present: true,
+      crane_drop_allowed: true,
+    },
+  ]);
+  await insert(client, "contacts", [
+    {
+      customer_id: hillside,
+      name: "Gemma Hill",
+      job_role: "Office manager",
+      phone: "01453 000123",
+      email: "gemma@hillside.example",
+    },
+    {
+      customer_id: marlow,
+      site_id: marlowSite,
+      name: "Tom Marlow",
+      job_role: "Owner",
+      phone: "07700 900321",
+    },
+    {
+      customer_id: severn,
+      name: "Goods-in",
+      job_role: "Goods-in",
+      phone: "01633 000456",
+      email: "goodsin@severn-timber.example",
+    },
+    { customer_id: oakfield, name: "Priya Shah", job_role: "Site manager", phone: "07700 900654" },
   ]);
 }

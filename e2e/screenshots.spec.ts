@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { SCREENS, THEMES, WIDTHS, setPreferences } from "./helpers";
+import { SCREENS, THEMES, WIDTHS, expectNoOverflow, setPreferences } from "./helpers";
 
 const SETTINGS_SCREENS = [
   ["/settings", "Settings"],
@@ -94,6 +94,46 @@ for (const theme of THEMES) {
         await page.getByRole("button", { name: "Edit Luton 1" }).first().click();
         await expect(page.getByRole("dialog")).toBeVisible();
         await page.screenshot({ path: `screenshots/${theme}/${width}/state-vehicle-panel.png` });
+      });
+
+      test("customer screens", async ({ page }) => {
+        test.setTimeout(90_000);
+        const shot = async (name: string) => {
+          await settle(page);
+          await expectNoOverflow(page);
+          await page.screenshot({
+            path: `screenshots/${theme}/${width}/${name}.png`,
+            fullPage: true,
+          });
+        };
+        await page.goto("/customers");
+        await expect(page.getByRole("heading", { level: 1, name: "Customers" })).toBeVisible();
+        await shot("customers-list");
+
+        await page.getByRole("link", { name: "Severn Timber Merchants" }).first().click();
+        await expect(
+          page.getByRole("heading", { level: 1, name: "Severn Timber Merchants" }),
+        ).toBeVisible();
+        await shot("customer");
+        await page.getByRole("tab", { name: /Contacts/ }).click();
+        await shot("customer-contacts");
+
+        await page.getByRole("tab", { name: /Sites/ }).click();
+        await page.getByRole("link", { name: "Newport depot" }).first().click();
+        await expect(page.getByRole("heading", { level: 1, name: "Newport depot" })).toBeVisible();
+        await shot("site");
+        await page.getByRole("button", { name: "Edit site" }).click();
+        await expect(page.getByRole("dialog")).toBeVisible();
+        await page.screenshot({ path: `screenshots/${theme}/${width}/state-site-panel.png` });
+        await page.keyboard.press("Escape");
+
+        await page.goto("/customers");
+        await page.getByRole("link", { name: "Oakfield Homes" }).first().click();
+        await page.getByRole("link", { name: "Plot 14, Meadow View" }).first().click();
+        await expect(
+          page.getByRole("heading", { level: 1, name: "Plot 14, Meadow View" }),
+        ).toBeVisible();
+        await shot("site-restricted");
       });
 
       test("users and roles", async ({ page }) => {

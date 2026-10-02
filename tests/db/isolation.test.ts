@@ -9,7 +9,14 @@ import {
   type TestOrg,
   type TestUser,
 } from "./helpers";
-import { SETTINGS_TABLES, createSettings, type SettingsFixture } from "./fixtures";
+import {
+  CUSTOMER_TABLES,
+  SETTINGS_TABLES,
+  createCustomer,
+  createSettings,
+  type CustomerFixture,
+  type SettingsFixture,
+} from "./fixtures";
 
 /**
  * Spec section 5 and Stage 1 "Done when": a user from Organisation A cannot
@@ -23,6 +30,8 @@ let outsider: TestUser;
 let inviteA: { id: string; token: string };
 let settingsA: SettingsFixture;
 let settingsB: SettingsFixture;
+let customerA: CustomerFixture;
+let customerB: CustomerFixture;
 const fileA = () => `${orgA.id}/documents/delivery-note.txt`;
 
 beforeAll(async () => {
@@ -34,6 +43,10 @@ beforeAll(async () => {
   [settingsA, settingsB] = await Promise.all([
     createSettings(orgA.admin.client, "alpha", member(orgA, "driver").id),
     createSettings(orgB.admin.client, "bravo"),
+  ]);
+  [customerA, customerB] = await Promise.all([
+    createCustomer(orgA.admin.client, "alpha"),
+    createCustomer(orgB.admin.client, "bravo"),
   ]);
 
   const { data, error } = await orgA.admin.client
@@ -55,6 +68,7 @@ const TABLES: { table: string; orgColumn: string; patch: Record<string, unknown>
   { table: "invitations", orgColumn: "organisation_id", patch: { email: "x@example.test" } },
   { table: "audit_log", orgColumn: "organisation_id", patch: { action: "delete" } },
   ...SETTINGS_TABLES.map((t) => ({ ...t, orgColumn: "organisation_id" })),
+  ...CUSTOMER_TABLES.map((t) => ({ ...t, orgColumn: "organisation_id" })),
 ];
 
 /** Clients that must never see Organisation A's data. */
@@ -375,5 +389,38 @@ describe("rows can never point at another organisation's data", () => {
       load_prices: [],
     });
     expect(await snapshot("rate_card_pallet_prices", "organisation_id")).toEqual(prices);
+  });
+});
+
+describe("customers, sites and contacts can't be linked across organisations", () => {
+  const b = () => orgB.admin.client;
+
+  it("a site can't be added under A's customer", async () => {
+    const { error } = await b()
+      .from("sites")
+      .insert({ customer_id: customerA.customerId, name: "Planted", postcode: "GL1 1AA" });
+    expect(error).not.toBeNull();
+  });
+
+  it("a contact can't be attached to A's customer or A's site", async () => {
+    const toCustomer = await b()
+      .from("contacts")
+      .insert({ customer_id: customerA.customerId, name: "Spy" });
+    expect(toCustomer.error).not.toBeNull();
+    const toSite = await b()
+      .from("contacts")
+      .insert({ customer_id: customerB.customerId, site_id: customerA.siteId, name: "Spy" });
+    expect(toSite.error).not.toBeNull();
+  });
+
+  it("A's site can't be marked as verified by B", async () => {
+    const { error } = await b().rpc("verify_site", { target_site_id: customerA.siteId });
+    expect(error).not.toBeNull();
+    const { data } = await service
+      .from("sites")
+      .select("last_verified_at")
+      .eq("id", customerA.siteId)
+      .single();
+    expect(data?.last_verified_at).toBeNull();
   });
 });

@@ -101,3 +101,48 @@ export const SETTINGS_TABLES: { table: string; patch: Record<string, unknown> }[
   { table: "rate_card_pallet_prices", patch: { price: 0 } },
   { table: "rate_card_load_prices", patch: { price: 0 } },
 ];
+
+export type CustomerFixture = { customerId: string; siteId: string; contactId: string };
+
+/** A customer with one site and one contact, created through the API. */
+export async function createCustomer(
+  client: SupabaseClient,
+  label: string,
+): Promise<CustomerFixture> {
+  const customerId = await insert(client, "customers", {
+    name: `${label} Builders`,
+    account_ref: `${label.toUpperCase()}01`,
+  });
+  const siteId = await insert(client, "sites", {
+    customer_id: customerId,
+    name: `${label} yard`,
+    postcode: "GL1 2BB",
+    latitude: 51.86,
+    longitude: -2.24,
+    location_source: "postcode",
+    no_hgvs: true,
+    booking_required: true,
+    booking_lead_hours: 24,
+  });
+  const contactId = await insert(client, "contacts", {
+    customer_id: customerId,
+    site_id: siteId,
+    name: "Site manager",
+    phone: "07700 900111",
+  });
+  const { error } = await client
+    .from("postcode_lookups")
+    .upsert(
+      { postcode: "GL1 2BB", latitude: 51.86, longitude: -2.24 },
+      { onConflict: "organisation_id,postcode" },
+    );
+  if (error) throw new Error(`postcode_lookups: ${error.message}`);
+  return { customerId, siteId, contactId };
+}
+
+export const CUSTOMER_TABLES: { table: string; patch: Record<string, unknown> }[] = [
+  { table: "customers", patch: { name: "Hijacked customer" } },
+  { table: "sites", patch: { no_hgvs: false } },
+  { table: "contacts", patch: { phone: "0" } },
+  { table: "postcode_lookups", patch: { latitude: 50 } },
+];

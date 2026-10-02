@@ -9,22 +9,21 @@ Build in the stages of spec section 14, in order, and only start a stage once th
 
 ## Current stage
 
-**Stage 2: Settings. Complete; awaiting sign-off.** (Stages 0 and 1 signed off.)
+**Stage 3: Customers. Complete; awaiting sign-off.** (Stages 0–2 signed off.)
 
-- Done: depots (postcode, loading equipment, opening hours, one default), handling unit types
-  (with a "common pallets" starter set), vehicles with the capacity matrix, unloading methods,
-  compliance, running costs and off-road dates, drivers (licences, days, linked login), postcode
-  zones (no overlapping areas), hauliers and rate cards (prices per zone and pallet size / load
-  type, drop charges, surcharges, remote postcodes), warning thresholds, organisation name, logo
-  and accent colour (applied app-wide, contrast-adjusted). 133 database tests.
-- Deferred: `QuoteRequest` table (6.5) needs orders, so it lands in Stage 4. Compliance zones,
-  standing runs and import/export show as "Coming soon" on the Settings page (their stages).
-  The postcode cache table (spec 4) arrives with Stage 3, when sites make it worthwhile.
+- Done: customers (search by name, account ref or postcode), sites with every spec 6.6 field
+  (access, unloading, booking, opening hours and delivery windows, site rules, instructions),
+  postcode lookup with a per-organisation cache, map pin that can be dragged, clicked, typed or
+  reset to the postcode, contacts (customer-wide or per site, tap-to-call), "Mark as verified"
+  with stale-site badges driven by the organisation's threshold. Planners and admins edit; office
+  staff view only. 167 database tests.
+- Deferred: QuoteRequest (6.5) and customer Orders/Assets tabs fill in with Stages 4 and 9.
+  Compliance zones, standing runs and import/export are still "Coming soon" in Settings.
 - Not yet: emailed invitations and password reset (need Resend); GDPR export/deletion.
-- Next: **Stage 3: Customers**. Customers, sites (postcode lookup, map pin), contacts,
-  verification.
+- Next: **Stage 4: Orders**. Orders, lines, readiness, documents, CSV import.
 - Open: no hosted Supabase project yet. postcodes.io and OpenRouteService are blocked by this
-  cloud environment's network policy, so lookups fall back (depots save without a map position).
+  cloud environment's network policy; browser tests use `e2e/support/mock-postcodes.mjs`
+  (started by Playwright, `POSTCODES_API_URL=http://localhost:3199`).
 
 ## Commands
 
@@ -90,7 +89,14 @@ In the Claude Code cloud environment, Chromium is preinstalled and `@playwright/
 - `src/lib/settings/`: `options.ts` (fixed choices matching DB checks), `form.ts` (FormData →
   Zod helpers), `schemas.ts` (one parser per form), `thresholds.ts` (defaults + resolution),
   `save.ts` (`asAdmin`, `upsertRow`, `deleteRow`, DB error → plain English).
-- `src/lib/services/postcodes.ts`: postcodes.io lookup that never throws (returns null).
+- `src/lib/services/postcodes.ts`: postcodes.io lookup that never throws (returns null);
+  `POSTCODES_API_URL` overrides the base URL. `src/lib/customers/locate.ts` checks the
+  organisation's `postcode_lookups` cache first.
+- `src/app/(app)/customers/`: list, `[id]` (tabs: sites, contacts, orders, assets, notes) and
+  `[id]/sites/[siteId]` (restrictions, freshness, draggable pin). All actions in `actions.ts`
+  use `withCapability("customers.edit", …)`.
+- `src/lib/customers/`: `schemas.ts` (customer/site/contact parsers), `sites.ts`
+  (`siteRestrictions` plain-English chips, `siteFreshness` stale check), `types.ts`.
 - `src/lib/branding.ts`: logo storage paths and signed URLs; `(app)/layout.tsx` injects the
   organisation's accent colour.
 
@@ -101,6 +107,8 @@ In the Claude Code cloud environment, Chromium is preinstalled and `@playwright/
   `private.audit()` trigger if spec 6.14 covers it, and an entry in `TABLES` in
   `tests/db/isolation.test.ts`. `tests/db/schema.test.ts` fails if RLS or the columns are missing,
   or if `anon` has any table privilege. Revoke default grants and grant only what's needed.
+- **Non-settings tables** call `private.secure_org_table('public.x', array['admin','planner']::public.app_role[])`
+  with the roles allowed to write (spec 3); everyone in the organisation can read.
 - **Settings tables** call `private.secure_settings_table('public.x')` in their migration (RLS:
   members read, admins write; identity columns locked; audit trigger). References between
   organisation tables use composite foreign keys on `(id, organisation_id)` so a row can never

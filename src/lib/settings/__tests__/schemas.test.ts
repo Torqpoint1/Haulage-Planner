@@ -67,7 +67,7 @@ describe("depots", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.errors.postcode).toMatch(/full UK postcode/);
-      expect(r.errors.hours_tue).toMatch(/after opening/);
+      expect(r.errors.hours_tue).toMatch(/must be after the start/);
       expect(r.errors.hours_wed).toMatch(/both times/);
     }
   });

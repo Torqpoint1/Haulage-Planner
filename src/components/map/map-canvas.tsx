@@ -3,9 +3,17 @@
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { useEffect } from "react";
-import { CircleMarker, MapContainer, Polyline, TileLayer, Tooltip, useMap } from "react-leaflet";
+import {
+  CircleMarker,
+  MapContainer,
+  Marker,
+  Polyline,
+  TileLayer,
+  Tooltip,
+  useMap,
+} from "react-leaflet";
 import { UK_CENTRE, UK_ZOOM, type TileConfig } from "@/lib/services/tiles";
-import type { MapPin, MapRoute } from "./types";
+import type { EditablePin, MapPin, MapRoute } from "./types";
 
 type MapCanvasProps = {
   pins: MapPin[];
@@ -13,16 +21,31 @@ type MapCanvasProps = {
   tiles: TileConfig | null;
   selectedId?: string | null;
   onSelect?: (id: string) => void;
+  editable?: EditablePin | null;
   label: string;
 };
 
-function FitToContent({ pins, routes }: { pins: MapPin[]; routes: MapRoute[] }) {
+function FitToContent({
+  pins,
+  routes,
+  editable,
+}: {
+  pins: MapPin[];
+  routes: MapRoute[];
+  editable?: EditablePin | null;
+}) {
   const map = useMap();
-  const key = [...pins.map((p) => `${p.lat},${p.lng}`), ...routes.map((r) => r.id)].join("|");
+  // An editable pin is fitted when it first appears or is reset, not while being dragged.
+  const key = [
+    ...pins.map((p) => `${p.lat},${p.lng}`),
+    ...routes.map((r) => r.id),
+    editable ? `editable:${editable.version ?? 0}` : "",
+  ].join("|");
   useEffect(() => {
     const points: [number, number][] = [
       ...pins.map((p) => [p.lat, p.lng] as [number, number]),
       ...routes.flatMap((r) => r.points),
+      ...(editable ? [[editable.lat, editable.lng] as [number, number]] : []),
     ];
     if (points.length === 0) {
       map.setView(UK_CENTRE, UK_ZOOM);
@@ -48,12 +71,33 @@ function ResizeWatcher() {
   return null;
 }
 
+const editIcon = L.divIcon({
+  className: "map-edit-pin",
+  html: '<span class="map-edit-pin-dot"></span>',
+  iconSize: [28, 28],
+  iconAnchor: [14, 14],
+});
+
+function ClickToPlace({ editable }: { editable?: EditablePin | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!editable) return;
+    const onClick = (e: L.LeafletMouseEvent) => editable.onMove(e.latlng.lat, e.latlng.lng);
+    map.on("click", onClick);
+    return () => {
+      map.off("click", onClick);
+    };
+  }, [map, editable]);
+  return null;
+}
+
 export default function MapCanvas({
   pins,
   routes,
   tiles,
   selectedId,
   onSelect,
+  editable,
   label,
 }: MapCanvasProps) {
   return (
@@ -96,7 +140,26 @@ export default function MapCanvas({
           </CircleMarker>
         );
       })}
-      <FitToContent pins={pins} routes={routes} />
+      {editable ? (
+        <Marker
+          // Leaflet sets the title once, so re-create the marker when it moves.
+          key={`${editable.lat},${editable.lng}`}
+          position={[editable.lat, editable.lng]}
+          icon={editIcon}
+          draggable
+          keyboard
+          title={`${editable.label}: ${editable.lat.toFixed(5)}, ${editable.lng.toFixed(5)}`}
+          alt={editable.label}
+          eventHandlers={{
+            dragend: (e) => {
+              const p = (e.target as L.Marker).getLatLng();
+              editable.onMove(p.lat, p.lng);
+            },
+          }}
+        />
+      ) : null}
+      <ClickToPlace editable={editable} />
+      <FitToContent pins={pins} routes={routes} editable={editable} />
       <ResizeWatcher />
     </MapContainer>
   );

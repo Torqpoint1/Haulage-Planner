@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { createSettings } from "./fixtures";
+import { createCustomer, createSettings } from "./fixtures";
 import { createOrg, member, service, type Role, type TestOrg } from "./helpers";
 
 /**
@@ -297,5 +297,71 @@ describe("settings: everyone reads, only admins change (spec 3)", () => {
       .select("unit_type_id")
       .eq("vehicle_id", settings.vehicleId);
     expect(data).toEqual([{ unit_type_id: settings.unitTypeId }]);
+  });
+});
+
+describe("customers: planners and admins edit, everyone else only reads (spec 3)", () => {
+  let fixture: Awaited<ReturnType<typeof createCustomer>>;
+
+  beforeAll(async () => {
+    fixture = await createCustomer(member(org, "planner").client, "planned");
+  });
+
+  it("planners can create customers, sites and contacts", () => {
+    expect(fixture.siteId).toBeTruthy();
+  });
+
+  for (const role of ["office", "warehouse", "driver"] as const) {
+    it(`${role} can read customers and sites but not change them`, async () => {
+      const { client } = member(org, role);
+      const { data: sites } = await client.from("sites").select("id").eq("id", fixture.siteId);
+      expect(sites).toHaveLength(1);
+
+      const added = await client.from("customers").insert({ name: `${role} customer` });
+      expect(added.error).not.toBeNull();
+      const changed = await client
+        .from("sites")
+        .update({ no_hgvs: false })
+        .eq("id", fixture.siteId)
+        .select();
+      expect(changed.data ?? []).toEqual([]);
+      const removed = await client.from("contacts").delete().eq("id", fixture.contactId).select();
+      expect(removed.data ?? []).toEqual([]);
+      const verified = await client.rpc("verify_site", { target_site_id: fixture.siteId });
+      expect(verified.error).not.toBeNull();
+    });
+  }
+
+  it("marking a site as verified records who and when", async () => {
+    const planner = member(org, "planner");
+    const { error } = await planner.client.rpc("verify_site", { target_site_id: fixture.siteId });
+    expect(error).toBeNull();
+    const { data } = await service
+      .from("sites")
+      .select("last_verified_at, verified_by")
+      .eq("id", fixture.siteId)
+      .single();
+    expect(data?.verified_by).toBe(planner.id);
+    expect(Date.now() - new Date(data!.last_verified_at).getTime()).toBeLessThan(60_000);
+  });
+
+  it("a contact's site must belong to the same customer", async () => {
+    const other = await createCustomer(org.admin.client, "other");
+    const { error } = await org.admin.client
+      .from("contacts")
+      .insert({ customer_id: fixture.customerId, site_id: other.siteId, name: "Mixed up" });
+    expect(error).not.toBeNull();
+  });
+
+  it("deleting a customer removes its sites and contacts", async () => {
+    const doomed = await createCustomer(org.admin.client, "doomed");
+    await org.admin.client.from("customers").delete().eq("id", doomed.customerId);
+    const { data: sites } = await service.from("sites").select("id").eq("id", doomed.siteId);
+    const { data: contacts } = await service
+      .from("contacts")
+      .select("id")
+      .eq("id", doomed.contactId);
+    expect(sites).toEqual([]);
+    expect(contacts).toEqual([]);
   });
 });

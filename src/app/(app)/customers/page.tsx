@@ -1,34 +1,54 @@
-import { Building2, Plus } from "lucide-react";
 import type { Metadata } from "next";
-import { requireArea } from "@/lib/auth/session";
+import { connection } from "next/server";
 import { PageContainer, PageHeader } from "@/components/shell/page";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { EmptyState } from "@/components/ui/empty-state";
+import { can } from "@/lib/auth/roles";
+import { requireArea } from "@/lib/auth/session";
+import { siteFreshness } from "@/lib/customers/sites";
+import { createClient } from "@/lib/supabase/server";
+import { CustomersManager, type CustomerRow } from "./customers-manager";
 
 export const metadata: Metadata = { title: "Customers" };
 
 export default async function CustomersPage() {
-  await requireArea("customers");
+  const session = await requireArea("customers");
+  await connection();
+  const supabase = await createClient();
+  const [{ data: customers }, { data: org }] = await Promise.all([
+    supabase
+      .from("customers")
+      .select("*, sites(postcode, last_verified_at), contacts(count)")
+      .order("name"),
+    supabase
+      .from("organisations")
+      .select("site_info_stale_days")
+      .eq("id", session.membership.organisation.id)
+      .single(),
+  ]);
+  const staleDays = org?.site_info_stale_days ?? 180;
+  const now = new Date();
+  const rows: CustomerRow[] = (customers ?? []).map((c) => {
+    const sites = (c.sites ?? []) as { postcode: string; last_verified_at: string | null }[];
+    return {
+      id: c.id,
+      name: c.name,
+      account_ref: c.account_ref,
+      default_delivery_instructions: c.default_delivery_instructions,
+      notes: c.notes,
+      siteCount: sites.length,
+      postcodes: sites.map((s) => s.postcode),
+      staleSites: sites.filter((s) => siteFreshness(s.last_verified_at, staleDays, now).stale)
+        .length,
+      contactCount: (c.contacts as unknown as { count: number }[])[0]?.count ?? 0,
+    };
+  });
+
   return (
     <PageContainer>
       <PageHeader
         title="Customers"
         description="Customers, their delivery sites, contacts and site restrictions."
-        actions={
-          <Button variant="primary" disabled title="Available once accounts are set up">
-            <Plus aria-hidden />
-            New customer
-          </Button>
-        }
       />
-      <Card>
-        <EmptyState
-          icon={Building2}
-          title="No customers yet"
-          description="Record each site's access, unloading equipment and booking rules once, and they're checked automatically every time you plan a delivery."
-        />
-      </Card>
+      <CustomersManager rows={rows} canEdit={can(session.membership.role, "customers.edit")} />
     </PageContainer>
   );
 }

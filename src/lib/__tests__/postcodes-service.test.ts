@@ -8,9 +8,12 @@ describe("lookupPostcode", () => {
   it("returns the location from postcodes.io", async () => {
     const result = await lookupPostcode(
       "GL5 3AA",
-      respond(200, { status: 200, result: { latitude: 51.745, longitude: -2.217 } }),
+      respond(200, {
+        status: 200,
+        result: { latitude: 51.745, longitude: -2.217, admin_district: "Stroud" },
+      }),
     );
-    expect(result).toEqual({ latitude: 51.745, longitude: -2.217 });
+    expect(result).toEqual({ latitude: 51.745, longitude: -2.217, district: "Stroud" });
   });
 
   it("returns null for unknown postcodes", async () => {

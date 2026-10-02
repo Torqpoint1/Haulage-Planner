@@ -3,8 +3,10 @@
 import { RadioGroup as RadioGroupPrimitive } from "radix-ui";
 import { useId } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/cn";
-import { COLOUR_TAGS } from "@/lib/settings/options";
+import { COLOUR_TAGS, DAYS } from "@/lib/settings/options";
+import type { OpeningHours } from "@/lib/settings/schemas";
 import { useFormErrors } from "./entity-form";
 
 type Option = { value: string; label: string };
@@ -113,5 +115,64 @@ export function ColourDot({ tag, className }: { tag: string; className?: string 
       className={cn("inline-block size-3 shrink-0 rounded-full", `map-dot-${tag}`, className)}
       aria-hidden
     />
+  );
+}
+
+/**
+ * Seven rows of "from – to" times, submitted as <prefix>_<day>_open / _close.
+ * Used for depot and site opening hours and for delivery windows.
+ */
+export function WeeklyHoursFields({
+  prefix,
+  hours,
+  startLabel = "opens",
+  endLabel = "closes",
+}: {
+  prefix: string;
+  hours: OpeningHours;
+  startLabel?: string;
+  endLabel?: string;
+}) {
+  const { errors } = useFormErrors();
+  return (
+    <div className="flex flex-col gap-3">
+      {DAYS.map(({ value, label }) => {
+        const h = hours[value];
+        const error = errors[`${prefix}_${value}`];
+        return (
+          <div key={value} className="flex min-w-0 flex-col gap-1">
+            <div className="flex flex-col gap-2 md:flex-row md:items-center">
+              <span className="shrink-0 text-sm font-medium md:w-menu">{label}</span>
+              <div className="flex min-w-0 items-center gap-2">
+                <Input
+                  type="time"
+                  name={`${prefix}_${value}_open`}
+                  defaultValue={h?.open ?? ""}
+                  aria-label={`${label} ${startLabel}`}
+                  invalid={Boolean(error)}
+                  className="num"
+                />
+                <span className="text-sm text-text-subtle" aria-hidden>
+                  to
+                </span>
+                <Input
+                  type="time"
+                  name={`${prefix}_${value}_close`}
+                  defaultValue={h?.close ?? ""}
+                  aria-label={`${label} ${endLabel}`}
+                  invalid={Boolean(error)}
+                  className="num"
+                />
+              </div>
+            </div>
+            {error ? (
+              <p role="alert" className="text-sm text-danger-fg">
+                {error}
+              </p>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
   );
 }

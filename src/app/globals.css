@@ -499,3 +499,24 @@
 .leaflet-container .leaflet-control-attribution a {
   color: var(--accent-text);
 }
+
+/* Draggable location pin (site map correction) */
+.map-edit-pin {
+  cursor: grab;
+}
+.map-edit-pin:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 9999px;
+}
+.map-edit-pin-dot {
+  display: block;
+  width: 28px;
+  height: 28px;
+  border-radius: 9999px;
+  background: var(--accent);
+  border: 4px solid var(--surface);
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 4px 12px -2px rgb(16 24 40 / 0.3);
+}

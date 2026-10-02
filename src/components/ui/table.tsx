@@ -162,7 +162,7 @@ export function DataTable<T>({
       <div
         className={cn(
           "min-w-0 overflow-auto rounded-lg border border-border bg-surface scrollbar-thin",
-          renderCard && "hidden xl:block",
+          renderCard && (!loading && rows.length === 0 ? "hidden" : "hidden xl:block"),
           scrollClassName,
         )}
       >
@@ -267,10 +267,10 @@ export function DataTable<T>({
                 })}
           </tbody>
         </table>
-        {!loading && rows.length === 0 ? <div>{empty}</div> : null}
+        {!loading && rows.length === 0 && !renderCard ? <div>{empty}</div> : null}
       </div>
       {renderCard ? (
-        <div className="min-w-0 xl:hidden">
+        <div className={cn("min-w-0", (loading || rows.length > 0) && "xl:hidden")}>
           {loading ? (
             <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4">
               <Skeleton className="h-4 w-1/2" />
