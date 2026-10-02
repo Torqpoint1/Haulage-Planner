@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import { createSettings } from "./fixtures";
 import { createOrg, member, service, type Role, type TestOrg } from "./helpers";
 
 /**
@@ -214,4 +215,87 @@ describe("file permissions by role", () => {
       expect(error === null).toBe(canUpload);
     });
   }
+});
+
+describe("settings: everyone reads, only admins change (spec 3)", () => {
+  let settings: Awaited<ReturnType<typeof createSettings>>;
+
+  beforeAll(async () => {
+    settings = await createSettings(org.admin.client, "roles");
+  });
+
+  for (const role of NON_ADMINS) {
+    it(`${role} can read settings but not add, change or delete them`, async () => {
+      const { client } = member(org, role);
+
+      const { data: vehicles } = await client.from("vehicles").select("id");
+      expect(vehicles?.map((v) => v.id)).toContain(settings.vehicleId);
+
+      const added = await client
+        .from("depots")
+        .insert({ name: `${role} depot`, postcode: "GL1 1AA" });
+      expect(added.error).not.toBeNull();
+
+      const changed = await client
+        .from("vehicles")
+        .update({ name: "Renamed" })
+        .eq("id", settings.vehicleId)
+        .select();
+      expect(changed.data ?? []).toEqual([]);
+
+      const deleted = await client
+        .from("unit_types")
+        .delete()
+        .eq("id", settings.unitTypeId)
+        .select();
+      expect(deleted.data ?? []).toEqual([]);
+
+      await client.rpc("save_vehicle_capacities", {
+        target_vehicle_id: settings.vehicleId,
+        capacities: [],
+      });
+      const { data: caps } = await service
+        .from("vehicle_capacities")
+        .select("id")
+        .eq("vehicle_id", settings.vehicleId);
+      expect(caps).toHaveLength(1);
+    });
+  }
+
+  it("admins can change settings, and changes are audited", async () => {
+    const { error } = await org.admin.client
+      .from("vehicles")
+      .update({ cost_per_mile: 0.85 })
+      .eq("id", settings.vehicleId);
+    expect(error).toBeNull();
+    const { data } = await org.admin.client
+      .from("audit_log")
+      .select("before, after")
+      .eq("record_id", settings.vehicleId)
+      .eq("action", "update")
+      .single();
+    expect(Number(data?.before.cost_per_mile)).toBe(0);
+    expect(Number(data?.after.cost_per_mile)).toBe(0.85);
+  });
+
+  it("deleting a unit type removes it from vehicle capacities", async () => {
+    const extra = await org.admin.client
+      .from("unit_types")
+      .insert({ name: "Cage", short_code: "CG", length_mm: 1, width_mm: 1, height_mm: 1 })
+      .select("id")
+      .single();
+    await org.admin.client.rpc("save_vehicle_capacities", {
+      target_vehicle_id: settings.vehicleId,
+      capacities: [
+        { unit_type_id: settings.unitTypeId, max_units: 6 },
+        { unit_type_id: extra.data!.id, max_units: 4 },
+      ],
+    });
+    await org.admin.client.from("unit_types").delete().eq("id", extra.data!.id);
+    const { data } = await service
+      .from("vehicle_capacities")
+      .select("unit_type_id")
+      .eq("vehicle_id", settings.vehicleId);
+    expect(data).toEqual([{ unit_type_id: settings.unitTypeId }]);
+  });
 });

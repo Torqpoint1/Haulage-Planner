@@ -13,6 +13,7 @@ import { UserMenu } from "./user-menu";
 type AppShellProps = {
   children: React.ReactNode;
   orgName: string;
+  logoUrl?: string | null;
   userName: string;
   email: string;
   role: Role;
@@ -22,7 +23,7 @@ type AppShellProps = {
  * Responsive navigation (spec 9): a left sidebar on desktop (1280+), an icon
  * rail on tablet (768+), and a bottom bar on phones.
  */
-export function AppShell({ children, orgName, userName, email, role }: AppShellProps) {
+export function AppShell({ children, orgName, logoUrl, userName, email, role }: AppShellProps) {
   const pathname = usePathname();
   const items = navFor(role);
   const account = { name: userName, email, role, orgName };
@@ -45,7 +46,7 @@ export function AppShell({ children, orgName, userName, email, role }: AppShellP
         )}
       >
         <div className="flex h-header shrink-0 items-center gap-3 border-b border-border px-4 max-xl:justify-center xl:px-6">
-          <BrandMark />
+          <BrandMark logoUrl={logoUrl} orgName={orgName} />
           <span className="hidden min-w-0 flex-col xl:flex">
             <span className="truncate text-sm font-semibold">{APP_NAME}</span>
             <span className="truncate text-xs text-text-subtle">{orgName}</span>
@@ -72,7 +73,7 @@ export function AppShell({ children, orgName, userName, email, role }: AppShellP
         {/* Phone top bar */}
         <header className="sticky top-0 z-20 flex h-header shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-4 md:hidden">
           <div className="flex min-w-0 items-center gap-3">
-            <BrandMark />
+            <BrandMark logoUrl={logoUrl} orgName={orgName} />
             <span className="flex min-w-0 flex-col">
               <span className="truncate text-sm font-semibold">{APP_NAME}</span>
               <span className="truncate text-xs text-text-subtle">{orgName}</span>
@@ -95,7 +96,18 @@ export function AppShell({ children, orgName, userName, email, role }: AppShellP
   );
 }
 
-function BrandMark() {
+function BrandMark({ logoUrl, orgName }: { logoUrl?: string | null; orgName: string }) {
+  if (logoUrl) {
+    return (
+      // A signed, expiring storage URL: next/image can't optimise it, so a plain img is used.
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={logoUrl}
+        alt={`${orgName} logo`}
+        className="size-avatar shrink-0 rounded-md object-contain"
+      />
+    );
+  }
   return (
     <span className="flex size-avatar shrink-0 items-center justify-center rounded-md bg-accent text-accent-fg">
       <Truck className="size-icon-sm" aria-hidden />

@@ -9,6 +9,7 @@ import {
   type TestOrg,
   type TestUser,
 } from "./helpers";
+import { SETTINGS_TABLES, createSettings, type SettingsFixture } from "./fixtures";
 
 /**
  * Spec section 5 and Stage 1 "Done when": a user from Organisation A cannot
@@ -20,6 +21,8 @@ let orgA: TestOrg;
 let orgB: TestOrg;
 let outsider: TestUser;
 let inviteA: { id: string; token: string };
+let settingsA: SettingsFixture;
+let settingsB: SettingsFixture;
 const fileA = () => `${orgA.id}/documents/delivery-note.txt`;
 
 beforeAll(async () => {
@@ -28,6 +31,10 @@ beforeAll(async () => {
     createOrg("bravo", ["planner"]),
   ]);
   outsider = await createUser("outsider");
+  [settingsA, settingsB] = await Promise.all([
+    createSettings(orgA.admin.client, "alpha", member(orgA, "driver").id),
+    createSettings(orgB.admin.client, "bravo"),
+  ]);
 
   const { data, error } = await orgA.admin.client
     .rpc("create_invitation", { invite_email: "pending@example.test", invite_role: "office" })
@@ -42,12 +49,13 @@ beforeAll(async () => {
 }, 60_000);
 
 /** Every table holding organisation data, and the column naming the organisation. */
-const TABLES = [
-  { table: "organisations", orgColumn: "id" },
-  { table: "memberships", orgColumn: "organisation_id" },
-  { table: "invitations", orgColumn: "organisation_id" },
-  { table: "audit_log", orgColumn: "organisation_id" },
-] as const;
+const TABLES: { table: string; orgColumn: string; patch: Record<string, unknown> }[] = [
+  { table: "organisations", orgColumn: "id", patch: { name: "Hijacked" } },
+  { table: "memberships", orgColumn: "organisation_id", patch: { role: "admin" } },
+  { table: "invitations", orgColumn: "organisation_id", patch: { email: "x@example.test" } },
+  { table: "audit_log", orgColumn: "organisation_id", patch: { action: "delete" } },
+  ...SETTINGS_TABLES.map((t) => ({ ...t, orgColumn: "organisation_id" })),
+];
 
 /** Clients that must never see Organisation A's data. */
 function intruders(): [string, SupabaseClient][] {
@@ -57,6 +65,13 @@ function intruders(): [string, SupabaseClient][] {
     ["signed-in user with no organisation", outsider.client],
     ["signed-out visitor", anonymous()],
   ];
+}
+
+/** Every row of A's data in a table, as stored, to prove nothing changed. */
+async function snapshot(table: string, column: string) {
+  const { data, error } = await service.from(table).select("*").eq(column, orgA.id).order("id");
+  if (error) throw error;
+  return data;
 }
 
 async function countFor(table: string, column: string, orgId: string) {
@@ -75,7 +90,7 @@ describe("Organisation A's data is invisible to everyone outside it", () => {
     }
   });
 
-  for (const { table, orgColumn } of TABLES) {
+  for (const { table, orgColumn, patch } of TABLES) {
     describe(table, () => {
       it("cannot be read or listed", async () => {
         for (const [who, client] of intruders()) {
@@ -83,33 +98,19 @@ describe("Organisation A's data is invisible to everyone outside it", () => {
           expect(filtered.data ?? [], `${who}: filtered`).toEqual([]);
           const all = await client.from(table).select(orgColumn);
           const leaked = (all.data ?? []).filter(
-            (r) => (r as Record<string, string>)[orgColumn] === orgA.id,
+            (r) => (r as unknown as Record<string, string>)[orgColumn] === orgA.id,
           );
           expect(leaked, `${who}: listing`).toEqual([]);
         }
       });
 
       it("cannot be updated", async () => {
-        const before = await countFor(table, orgColumn, orgA.id);
-        const patch =
-          table === "organisations"
-            ? { name: "Hijacked" }
-            : table === "memberships"
-              ? { role: "admin" }
-              : { email: "x@example.test" };
+        const before = await snapshot(table, orgColumn);
         for (const [who, client] of intruders()) {
           const { data } = await client.from(table).update(patch).eq(orgColumn, orgA.id).select();
           expect(data ?? [], who).toEqual([]);
         }
-        expect(await countFor(table, orgColumn, orgA.id)).toBe(before);
-        if (table === "organisations") {
-          const { data } = await service
-            .from("organisations")
-            .select("name")
-            .eq("id", orgA.id)
-            .single();
-          expect(data?.name).toBe("alpha Ltd");
-        }
+        expect(await snapshot(table, orgColumn)).toEqual(before);
       });
 
       it("cannot be deleted", async () => {
@@ -144,6 +145,17 @@ describe("Organisation A's data is invisible to everyone outside it", () => {
       }
     }
     expect(await countFor("memberships", "organisation_id", orgA.id)).toBe(5);
+  });
+
+  it("settings rows cannot be added to Organisation A", async () => {
+    const before = await countFor("depots", "organisation_id", orgA.id);
+    for (const [who, client] of intruders()) {
+      const { error } = await client
+        .from("depots")
+        .insert({ organisation_id: orgA.id, name: `Planted by ${who}`, postcode: "GL5 3AA" });
+      expect(error, who).not.toBeNull();
+    }
+    expect(await countFor("depots", "organisation_id", orgA.id)).toBe(before);
   });
 
   it("member profiles (personal data) stay private", async () => {
@@ -295,5 +307,73 @@ describe("storage is split by organisation folder", () => {
       .from(bucket)
       .upload("loose.txt", new Blob(["x"]));
     expect(error).not.toBeNull();
+  });
+});
+
+describe("rows can never point at another organisation's data", () => {
+  // Organisation B's admin may write to B, but must not be able to link B's rows to A's.
+  const b = () => orgB.admin.client;
+
+  it("a capacity can't be added for A's vehicle or A's unit type", async () => {
+    const onAVehicle = await b().from("vehicle_capacities").insert({
+      vehicle_id: settingsA.vehicleId,
+      unit_type_id: settingsB.unitTypeId,
+      max_units: 1,
+    });
+    expect(onAVehicle.error).not.toBeNull();
+    const withAUnit = await b().from("vehicle_capacities").insert({
+      vehicle_id: settingsB.vehicleId,
+      unit_type_id: settingsA.unitTypeId,
+      max_units: 1,
+    });
+    expect(withAUnit.error).not.toBeNull();
+  });
+
+  it("a rate card can't be attached to A's haulier, or priced for A's zones", async () => {
+    const card = await b()
+      .from("rate_cards")
+      .insert({ haulier_id: settingsA.haulierId, name: "Sneaky", valid_from: "2026-01-01" });
+    expect(card.error).not.toBeNull();
+    const price = await b().from("rate_card_pallet_prices").insert({
+      rate_card_id: settingsB.rateCardId,
+      zone_id: settingsA.zoneId,
+      pallet_size: "half",
+      price: 1,
+    });
+    expect(price.error).not.toBeNull();
+  });
+
+  it("a driver can't be linked to a user from A", async () => {
+    const { error } = await b()
+      .from("drivers")
+      .insert({ name: "Borrowed driver", user_id: member(orgA, "driver").id });
+    expect(error).not.toBeNull();
+  });
+
+  it("moving a row into A is ignored", async () => {
+    await b().from("depots").update({ organisation_id: orgA.id }).eq("id", settingsB.depotId);
+    const { data } = await service
+      .from("depots")
+      .select("organisation_id")
+      .eq("id", settingsB.depotId)
+      .single();
+    expect(data?.organisation_id).toBe(orgB.id);
+  });
+
+  it("the save functions can't touch A's vehicle or rate card", async () => {
+    const before = await snapshot("vehicle_capacities", "organisation_id");
+    await b().rpc("save_vehicle_capacities", {
+      target_vehicle_id: settingsA.vehicleId,
+      capacities: [{ unit_type_id: settingsB.unitTypeId, max_units: 50 }],
+    });
+    expect(await snapshot("vehicle_capacities", "organisation_id")).toEqual(before);
+
+    const prices = await snapshot("rate_card_pallet_prices", "organisation_id");
+    await b().rpc("save_rate_card_prices", {
+      target_rate_card_id: settingsA.rateCardId,
+      pallet_prices: [],
+      load_prices: [],
+    });
+    expect(await snapshot("rate_card_pallet_prices", "organisation_id")).toEqual(prices);
   });
 });

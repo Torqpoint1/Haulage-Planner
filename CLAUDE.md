@@ -9,16 +9,22 @@ Build in the stages of spec section 14, in order, and only start a stage once th
 
 ## Current stage
 
-**Stage 1: Accounts. Complete; awaiting sign-off.** (Stage 0 signed off.)
+**Stage 2: Settings. Complete; awaiting sign-off.** (Stages 0 and 1 signed off.)
 
-- Done: sign-up, sign-in, sign-out, company onboarding, invitations by link (14-day, single use,
-  hashed), five roles, Users & roles screen, Row Level Security on every table, organisation
-  storage folders, audit log, server-side role checks, 61 database isolation/role tests.
-- Not yet: emailed invitations and password reset (need Resend, a later stage); per-organisation
-  accent colour applied app-wide (Stage 2); GDPR export/deletion (spec 12, later).
-- Next: **Stage 2: Settings**. Depots, unit types, vehicles (capacity matrix), drivers, hauliers
-  and rate cards, postcode zones, thresholds, branding.
-- Open: no hosted Supabase project yet; everything runs against local Supabase.
+- Done: depots (postcode, loading equipment, opening hours, one default), handling unit types
+  (with a "common pallets" starter set), vehicles with the capacity matrix, unloading methods,
+  compliance, running costs and off-road dates, drivers (licences, days, linked login), postcode
+  zones (no overlapping areas), hauliers and rate cards (prices per zone and pallet size / load
+  type, drop charges, surcharges, remote postcodes), warning thresholds, organisation name, logo
+  and accent colour (applied app-wide, contrast-adjusted). 133 database tests.
+- Deferred: `QuoteRequest` table (6.5) needs orders, so it lands in Stage 4. Compliance zones,
+  standing runs and import/export show as "Coming soon" on the Settings page (their stages).
+  The postcode cache table (spec 4) arrives with Stage 3, when sites make it worthwhile.
+- Not yet: emailed invitations and password reset (need Resend); GDPR export/deletion.
+- Next: **Stage 3: Customers**. Customers, sites (postcode lookup, map pin), contacts,
+  verification.
+- Open: no hosted Supabase project yet. postcodes.io and OpenRouteService are blocked by this
+  cloud environment's network policy, so lookups fall back (depots save without a map position).
 
 ## Commands
 
@@ -38,7 +44,9 @@ Build in the stages of spec section 14, in order, and only start a stage once th
 `npx supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor,realtime,postgres-meta`.
 Playwright builds the app and runs `next start` on port 3100 with `ENABLE_DEV_GALLERY=1`. A setup
 project creates "Example Doors Ltd" with admin, office, warehouse and driver users and saves their
-sessions in `e2e/.auth/` (gitignored); tests default to the admin.
+sessions in `e2e/.auth/` (gitignored); tests default to the admin. The company is seeded with
+realistic settings (`seedSettings` in `e2e/support/accounts.ts`), so tests that create things use
+names that don't clash with the seed.
 In the Claude Code cloud environment, Chromium is preinstalled and `@playwright/test` is pinned to
 1.56.1 to match it; don't run `playwright install` there.
 
@@ -73,6 +81,18 @@ In the Claude Code cloud environment, Chromium is preinstalled and `@playwright/
   `my_role()`, `has_role(...)`) and triggers; API functions are `create_organisation`,
   `create_invitation`, `revoke_invitation`, `get_invitation`, `accept_invitation`.
 - `tests/db/`: isolation, role and schema-guard tests against the real database.
+  `fixtures.ts` creates one row in every settings table.
+- `src/app/(app)/settings/<section>/`: each section is `page.tsx` (server: `requireArea`, query),
+  `actions.ts` (server actions) and a client `*-manager.tsx` built on `EntityManager`.
+- `src/components/settings/`: `EntityManager` (list + add/edit side panel + delete confirm),
+  `EntityForm` / `FormField` / `FormSection` (forms that keep typed values on validation errors),
+  `CheckboxGroup`, `ColourPicker`, `SettingsHeader`.
+- `src/lib/settings/`: `options.ts` (fixed choices matching DB checks), `form.ts` (FormData →
+  Zod helpers), `schemas.ts` (one parser per form), `thresholds.ts` (defaults + resolution),
+  `save.ts` (`asAdmin`, `upsertRow`, `deleteRow`, DB error → plain English).
+- `src/lib/services/postcodes.ts`: postcodes.io lookup that never throws (returns null).
+- `src/lib/branding.ts`: logo storage paths and signed URLs; `(app)/layout.tsx` injects the
+  organisation's accent colour.
 
 ## Conventions
 
@@ -81,6 +101,16 @@ In the Claude Code cloud environment, Chromium is preinstalled and `@playwright/
   `private.audit()` trigger if spec 6.14 covers it, and an entry in `TABLES` in
   `tests/db/isolation.test.ts`. `tests/db/schema.test.ts` fails if RLS or the columns are missing,
   or if `anon` has any table privilege. Revoke default grants and grant only what's needed.
+- **Settings tables** call `private.secure_settings_table('public.x')` in their migration (RLS:
+  members read, admins write; identity columns locked; audit trigger). References between
+  organisation tables use composite foreign keys on `(id, organisation_id)` so a row can never
+  point at another organisation's data; parents need `unique (id, organisation_id)`.
+- **Forms** use plain named inputs inside `EntityForm`; field names match DB columns, the server
+  action parses `formObject(formData)` with the shared schema, and returns `{ ok, errors }` keyed
+  by field name. Multi-row saves (capacities, rate card prices) go through SECURITY INVOKER
+  database functions so they're atomic and still under RLS.
+- **Lists** pass `renderCard` to `DataTable` so phones and tablets get stacked cards instead of a
+  sideways-scrolling table.
 - **Roles are enforced three times**: hidden in the UI (`navFor`, `can`), checked in pages and
   server actions (`requireArea` / `requireCapability`), and enforced by RLS. Never rely on the
   first alone. Server actions return `{ ok, error }` with plain-English errors.

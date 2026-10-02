@@ -10,7 +10,7 @@ export type Session = {
   fullName: string;
   membership: {
     role: Role;
-    organisation: { id: string; name: string; accentColour: string };
+    organisation: { id: string; name: string; accentColour: string; logoPath: string | null };
   } | null;
 };
 
@@ -30,7 +30,7 @@ export const getSession = cache(async (): Promise<Session | null> => {
     supabase.from("profiles").select("full_name, email").eq("id", claims.sub).maybeSingle(),
     supabase
       .from("memberships")
-      .select("role, organisation:organisations(id, name, accent_colour)")
+      .select("role, organisation:organisations(id, name, accent_colour, logo_path)")
       .eq("user_id", claims.sub)
       .maybeSingle(),
   ]);
@@ -40,6 +40,7 @@ export const getSession = cache(async (): Promise<Session | null> => {
     id: string;
     name: string;
     accent_colour: string;
+    logo_path: string | null;
   } | null;
 
   return {
@@ -50,7 +51,12 @@ export const getSession = cache(async (): Promise<Session | null> => {
       membership && org && isRole(membership.role)
         ? {
             role: membership.role,
-            organisation: { id: org.id, name: org.name, accentColour: org.accent_colour },
+            organisation: {
+              id: org.id,
+              name: org.name,
+              accentColour: org.accent_colour,
+              logoPath: org.logo_path,
+            },
           }
         : null,
   };

@@ -29,7 +29,7 @@ export function Input({ className, leadingIcon, trailing, invalid, ...props }: I
         controlClasses,
         "h-control px-3",
         leadingIcon ? "pl-control" : null,
-        trailing ? "pr-control" : null,
+        trailing ? "pr-16" : null,
         className,
       )}
       {...props}
@@ -47,7 +47,7 @@ export function Input({ className, leadingIcon, trailing, invalid, ...props }: I
       ) : null}
       {input}
       {trailing ? (
-        <span className="pointer-events-none absolute inset-y-0 right-0 flex w-control items-center justify-center text-sm text-text-subtle">
+        <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-sm whitespace-nowrap text-text-subtle">
           {trailing}
         </span>
       ) : null}

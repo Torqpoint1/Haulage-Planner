@@ -147,8 +147,12 @@ export function Calendar({ selected, onSelect, isDisabled, initialMonth }: Calen
 }
 
 type DatePickerProps = {
-  value: Date | null;
-  onValueChange: (date: Date | null) => void;
+  /** Controlled value. Leave undefined and use defaultValue inside plain forms. */
+  value?: Date | null;
+  defaultValue?: Date | null;
+  onValueChange?: (date: Date | null) => void;
+  /** Submits the date as yyyy-mm-dd under this name in a form. */
+  name?: string;
   placeholder?: string;
   disabled?: boolean;
   invalid?: boolean;
@@ -163,8 +167,10 @@ type DatePickerProps = {
  * Invalid typed text is kept and flagged rather than silently discarded.
  */
 export function DatePicker({
-  value,
-  onValueChange,
+  value: valueProp,
+  defaultValue = null,
+  onValueChange: onValueChangeProp,
+  name,
   placeholder = "dd/mm/yyyy",
   disabled,
   invalid,
@@ -174,6 +180,12 @@ export function DatePicker({
   "aria-label": ariaLabel,
 }: DatePickerProps) {
   const control = useFieldControl({ id });
+  const [internal, setInternal] = useState<Date | null>(defaultValue);
+  const value = valueProp === undefined ? internal : valueProp;
+  const onValueChange = (date: Date | null) => {
+    setInternal(date);
+    onValueChangeProp?.(date);
+  };
   const [open, setOpen] = useState(false);
   const [text, setText] = useState(value ? formatLocalDate(value) : "");
   const [typedInvalid, setTypedInvalid] = useState(false);
@@ -236,6 +248,9 @@ export function DatePicker({
           >
             <CalendarIcon className="size-icon-sm" aria-hidden />
           </button>
+          {name ? (
+            <input type="hidden" name={name} value={value ? format(value, "yyyy-MM-dd") : ""} />
+          ) : null}
         </div>
       </PopoverAnchor>
       <PopoverContent

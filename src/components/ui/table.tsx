@@ -54,6 +54,11 @@ type DataTableProps<T> = {
   toolbar?: React.ReactNode;
   /** Classes for the scroll container, e.g. a max height for the sticky header. */
   scrollClassName?: string;
+  /**
+   * Below 1280px, show each row as a stacked card instead of the table, so
+   * controls never scroll out of view on phones and tablets (10.7).
+   */
+  renderCard?: (row: T) => React.ReactNode;
   className?: string;
 };
 
@@ -85,6 +90,7 @@ export function DataTable<T>({
   onVisibleColumnsChange,
   toolbar,
   scrollClassName,
+  renderCard,
   className,
 }: DataTableProps<T>) {
   const [sort, setSort] = useState<SortState>(initialSort);
@@ -156,6 +162,7 @@ export function DataTable<T>({
       <div
         className={cn(
           "min-w-0 overflow-auto rounded-lg border border-border bg-surface scrollbar-thin",
+          renderCard && "hidden xl:block",
           scrollClassName,
         )}
       >
@@ -262,6 +269,29 @@ export function DataTable<T>({
         </table>
         {!loading && rows.length === 0 ? <div>{empty}</div> : null}
       </div>
+      {renderCard ? (
+        <div className="min-w-0 xl:hidden">
+          {loading ? (
+            <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4">
+              <Skeleton className="h-4 w-1/2" />
+              <Skeleton className="h-3 w-3/4" />
+            </div>
+          ) : rows.length === 0 ? (
+            <div className="rounded-lg border border-border bg-surface">{empty}</div>
+          ) : (
+            <ul
+              aria-label={label}
+              className="flex flex-col divide-y divide-border rounded-lg border border-border bg-surface"
+            >
+              {sorted.map((row) => (
+                <li key={getRowId(row)} className="min-w-0 p-4">
+                  {renderCard(row)}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
