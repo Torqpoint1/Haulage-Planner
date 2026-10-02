@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { createCustomer, createSettings } from "./fixtures";
+import { createCustomer, createOrder, createSettings } from "./fixtures";
 import { createOrg, member, service, type Role, type TestOrg } from "./helpers";
 
 /**
@@ -363,5 +363,144 @@ describe("customers: planners and admins edit, everyone else only reads (spec 3)
       .eq("id", doomed.contactId);
     expect(sites).toEqual([]);
     expect(contacts).toEqual([]);
+  });
+});
+
+describe("orders: planners edit, office staff view and see history (spec 3, 9.3)", () => {
+  let order: Awaited<ReturnType<typeof createOrder>>;
+  let settings: Awaited<ReturnType<typeof createSettings>>;
+
+  beforeAll(async () => {
+    settings = await createSettings(org.admin.client, "ordering");
+    const customer = await createCustomer(org.admin.client, "ordering");
+    order = await createOrder(member(org, "planner").client, "role", settings, customer);
+  });
+
+  it("search text covers every reference, the customer and the postcode", async () => {
+    const { data } = await service
+      .from("orders")
+      .select("search_text")
+      .eq("id", order.orderId)
+      .single();
+    for (const term of [
+      "role-1001",
+      "po-role-77",
+      "dn-role-55",
+      "inv-role-33",
+      "ordering builders",
+      "gl1 2bb",
+      "gl12bb",
+    ]) {
+      expect(data?.search_text).toContain(term);
+    }
+  });
+
+  it("renaming the customer updates order search", async () => {
+    const { data: o } = await service
+      .from("orders")
+      .select("customer_id")
+      .eq("id", order.orderId)
+      .single();
+    await org.admin.client
+      .from("customers")
+      .update({ name: "Renamed Trading" })
+      .eq("id", o!.customer_id);
+    const { data } = await service
+      .from("orders")
+      .select("search_text")
+      .eq("id", order.orderId)
+      .single();
+    expect(data?.search_text).toContain("renamed trading");
+  });
+
+  it("office staff can read orders and their history but not change them", async () => {
+    const { client } = member(org, "office");
+    const { data: rows } = await client.from("orders").select("id").eq("id", order.orderId);
+    expect(rows).toHaveLength(1);
+    const { data: history } = await client
+      .from("audit_log")
+      .select("table_name")
+      .eq("record_id", order.orderId);
+    expect(history?.length).toBeGreaterThan(0);
+    // Office staff still can't see the rest of the audit log.
+    const { data: other } = await client
+      .from("audit_log")
+      .select("id")
+      .eq("table_name", "memberships");
+    expect(other).toEqual([]);
+
+    const changed = await client
+      .from("orders")
+      .update({ readiness: "ready" })
+      .eq("id", order.orderId)
+      .select();
+    expect(changed.data ?? []).toEqual([]);
+    const saved = await client.rpc("save_order", {
+      target_order_id: order.orderId,
+      order_data: {},
+      lines: [],
+    });
+    expect(saved.error).not.toBeNull();
+  });
+
+  it("saving an order replaces its lines in one go", async () => {
+    const planner = member(org, "planner");
+    const { data: current } = await service
+      .from("orders")
+      .select("*")
+      .eq("id", order.orderId)
+      .single();
+    const { error } = await planner.client.rpc("save_order", {
+      target_order_id: order.orderId,
+      order_data: { ...current, readiness: "part_ready", missing_items: "2 door frames" },
+      lines: [
+        { unit_type_id: settings.unitTypeId, quantity: 2, weight_per_unit_kg: 140 },
+        {
+          unit_type_id: settings.unitTypeId,
+          quantity: 1,
+          weight_per_unit_kg: 90,
+          description: "Spare frame",
+        },
+      ],
+    });
+    expect(error).toBeNull();
+    const { data: lines } = await service
+      .from("order_lines")
+      .select("quantity, position")
+      .eq("order_id", order.orderId)
+      .order("position");
+    expect(lines).toEqual([
+      { quantity: 2, position: 0 },
+      { quantity: 1, position: 1 },
+    ]);
+  });
+
+  it("a unit type in use on an order can't be deleted", async () => {
+    const { error } = await org.admin.client
+      .from("unit_types")
+      .delete()
+      .eq("id", settings.unitTypeId);
+    expect(error?.code).toBe("23503");
+  });
+
+  it("an import is all or nothing", async () => {
+    const planner = member(org, "planner");
+    const { data: current } = await service
+      .from("orders")
+      .select("customer_id, site_id")
+      .eq("id", order.orderId)
+      .single();
+    const good = {
+      order: { ...current, order_ref: "IMP-1", required_date: "2026-10-20" },
+      lines: [],
+    };
+    const bad = {
+      order: { ...current, order_ref: "IMP-2", required_date: "not a date" },
+      lines: [],
+    };
+    const { error } = await planner.client.rpc("import_orders", { orders: [good, bad] });
+    expect(error).not.toBeNull();
+    const { data } = await service.from("orders").select("id").eq("order_ref", "IMP-1");
+    expect(data).toEqual([]);
   });
 });

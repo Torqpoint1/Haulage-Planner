@@ -54,6 +54,7 @@ export async function createCompany(
   }
   await seedSettings(admin.client);
   await seedCustomers(admin.client);
+  await seedOrders(admin.client);
   return { adminEmail: admin.email, members: created };
 }
 
@@ -380,4 +381,104 @@ async function seedCustomers(client: Client) {
     },
     { customer_id: oakfield, name: "Priya Shah", job_role: "Site manager", phone: "07700 900654" },
   ]);
+}
+
+const isoInDays = (days: number) => {
+  const d = new Date(Date.now() + days * 86_400_000);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(d);
+};
+
+/** A week of fictional orders across the seeded customers (spec 13). */
+async function seedOrders(client: Client) {
+  const [{ data: sites }, { data: units }] = await Promise.all([
+    client.from("sites").select("id, customer_id, name, delivery_instructions"),
+    client.from("unit_types").select("id, short_code, typical_weight_kg"),
+  ]);
+  const site = (name: string) => sites!.find((s) => s.name === name)!;
+  const unit = (code: string) => units!.find((u) => u.short_code === code)!;
+  const line = (code: string, quantity: number, description = "") => ({
+    unit_type_id: unit(code).id,
+    quantity,
+    weight_per_unit_kg: Number(unit(code).typical_weight_kg),
+    description,
+  });
+  const order = (
+    siteName: string,
+    fields: Record<string, unknown>,
+    lines: ReturnType<typeof line>[],
+  ) => {
+    const s = site(siteName);
+    return {
+      order: {
+        customer_id: s.customer_id,
+        site_id: s.id,
+        delivery_instructions: s.delivery_instructions,
+        ...fields,
+      },
+      lines,
+    };
+  };
+  const orders = [
+    order(
+      "Stroud yard",
+      {
+        order_ref: "SO-24101",
+        customer_po: "HB-PO-7781",
+        delivery_note_number: "DN-50211",
+        invoice_number: "INV-90311",
+        required_date: isoInDays(1),
+        readiness: "ready",
+      },
+      [line("DP", 6, "Oak internal doors, 762 × 1981"), line("LL", 4, "Architrave packs")],
+    ),
+    order(
+      "Gloucester workshop",
+      {
+        order_ref: "SO-24102",
+        customer_po: "MJ-3310",
+        required_date: isoInDays(1),
+        readiness: "part_ready",
+        missing_items: "2 door frames",
+        expected_ready_date: isoInDays(1),
+        urgency: "timed",
+      },
+      [line("DP", 3, "Fire doors FD30")],
+    ),
+    order(
+      "Newport depot",
+      {
+        order_ref: "SO-24103",
+        customer_po: "STM-PO-0412",
+        delivery_note_number: "DN-50212",
+        required_date: isoInDays(2),
+        readiness: "in_production",
+        expected_ready_date: isoInDays(1),
+      },
+      [line("EUR", 4, "Door furniture"), line("UKP", 2)],
+    ),
+    order(
+      "Plot 14, Meadow View",
+      {
+        order_ref: "SO-24104",
+        customer_po: "OAK-14-221",
+        required_date: isoInDays(3),
+        readiness: "not_started",
+        urgency: "critical",
+        notes: "Site manager must sign.",
+      },
+      [line("DP", 8, "Plot 14 door set")],
+    ),
+    order(
+      "Stroud yard",
+      {
+        order_ref: "SO-24105",
+        required_date: isoInDays(4),
+        earliest_date: isoInDays(2),
+        readiness: "ready",
+      },
+      [line("UKP", 3)],
+    ),
+  ];
+  const { error } = await client.rpc("import_orders", { orders });
+  if (error) throw new Error(`orders: ${error.message}`);
 }

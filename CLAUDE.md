@@ -9,18 +9,23 @@ Build in the stages of spec section 14, in order, and only start a stage once th
 
 ## Current stage
 
-**Stage 3: Customers. Complete; awaiting sign-off.** (Stages 0–2 signed off.)
+**Stage 4: Orders. Complete; awaiting sign-off.** (Stages 0–3 signed off.)
 
-- Done: customers (search by name, account ref or postcode), sites with every spec 6.6 field
-  (access, unloading, booking, opening hours and delivery windows, site rules, instructions),
-  postcode lookup with a per-organisation cache, map pin that can be dragged, clicked, typed or
-  reset to the postcode, contacts (customer-wide or per site, tap-to-call), "Mark as verified"
-  with stale-site badges driven by the organisation's threshold. Planners and admins edit; office
-  staff view only. 167 database tests.
-- Deferred: QuoteRequest (6.5) and customer Orders/Assets tabs fill in with Stages 4 and 9.
-  Compliance zones, standing runs and import/export are still "Coming soon" in Settings.
+- Done: orders with lines (unit type, quantity, weight per unit defaulting to the unit's typical
+  weight), all four references, date window, urgency, readiness (missing items, expected ready
+  date), delivery instructions pre-filled from the site, documents (PDF/photos in storage, signed
+  links), plain-English history from the audit log, cancel/reinstate/delete. Search by order ref,
+  PO, delivery note, invoice, customer name or account ref, site name or postcode (with or
+  without the space), plus readiness/status filters, saved filters, column chooser and CSV
+  export. CSV import wizard: upload, column matching (guessed from headers, remembered per
+  organisation), server-side check with row-by-row problems, import of the valid orders, problem
+  rows downloadable with a Problem column, template download. `quote_requests` table (6.5) is in
+  place for Stage 7. 213 database tests.
+- Deferred: customer page Orders tab; customer/site and vehicle CSV imports (spec 11) and the
+  Settings import/export section; saved order filters are per browser (localStorage) until
+  per-user preferences exist.
 - Not yet: emailed invitations and password reset (need Resend); GDPR export/deletion.
-- Next: **Stage 4: Orders**. Orders, lines, readiness, documents, CSV import.
+- Next: **Stage 5: Rules engine**.
 - Open: no hosted Supabase project yet. postcodes.io and OpenRouteService are blocked by this
   cloud environment's network policy; browser tests use `e2e/support/mock-postcodes.mjs`
   (started by Playwright, `POSTCODES_API_URL=http://localhost:3199`).
@@ -97,6 +102,17 @@ In the Claude Code cloud environment, Chromium is preinstalled and `@playwright/
   use `withCapability("customers.edit", …)`.
 - `src/lib/customers/`: `schemas.ts` (customer/site/contact parsers), `sites.ts`
   (`siteRestrictions` plain-English chips, `siteFreshness` stale check), `types.ts`.
+- `src/app/(app)/orders/`: list (`page.tsx` queries with `ilike` on `search_text`;
+  `orders-list.tsx` filters, saved filters, export), `new`, `[id]` (detail, readiness, documents,
+  history), `[id]/edit`, `import` (wizard). `order-form.tsx` is shared; all actions in
+  `actions.ts` use `withCapability("orders.edit", …)`.
+- `src/lib/orders/`: `schemas.ts` (`parseOrder`, lines as `line_<n>_<column>`), `import.ts`
+  (field list, `suggestMapping`, pure `planOrderImport` that validates every row), `history.ts`
+  (audit rows → readable events), `summary.ts` ("6 DP · 2 EUR", weights), `options.ts`, `types.ts`.
+- `src/lib/csv.ts` (RFC 4180 parse/write, formula-injection safe) and `src/lib/download.ts`.
+- Orders DB: `save_order(id, order, lines)` and `import_orders(orders)` are SECURITY INVOKER and
+  atomic. `orders.search_text` is maintained by triggers (including when a customer or site is
+  renamed) and indexed with pg_trgm. Members may read `audit_log` rows for order tables only.
 - `src/lib/branding.ts`: logo storage paths and signed URLs; `(app)/layout.tsx` injects the
   organisation's accent colour.
 
@@ -117,6 +133,11 @@ In the Claude Code cloud environment, Chromium is preinstalled and `@playwright/
   action parses `formObject(formData)` with the shared schema, and returns `{ ok, errors }` keyed
   by field name. Multi-row saves (capacities, rate card prices) go through SECURITY INVOKER
   database functions so they're atomic and still under RLS.
+- **Dates** travel as yyyy-mm-dd: `toIsoDate(date)` to send, `formatIsoDate(iso)` to show.
+  Never `formatDate()` a calendar date (it's for timestamps).
+- **CSV imports** validate on the server with a pure planner, report problems against the
+  spreadsheet row number, import valid rows all-or-nothing per batch, and send only the mapped
+  columns (server action body limit is 4 MB, max 5,000 rows).
 - **Lists** pass `renderCard` to `DataTable` so phones and tablets get stacked cards instead of a
   sideways-scrolling table.
 - **Roles are enforced three times**: hidden in the UI (`navFor`, `can`), checked in pages and

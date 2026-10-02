@@ -175,6 +175,14 @@ export function fromIsoDate(iso: string): Date {
   return new Date(y, m - 1, d);
 }
 
+/** A local Date as yyyy-mm-dd (a calendar date, no timezone shift). */
+export function toIsoDate(date: Date): string {
+  return formatFns(date, "yyyy-MM-dd");
+}
+
+/** "01/10/2026" for a yyyy-mm-dd calendar date. */
+export const formatIsoDate = (iso: string) => formatLocalDate(fromIsoDate(iso));
+
 /** "Thu 1 Oct" for a calendar date (no timezone shift). */
 export function formatLocalDayShort(date: Date): string {
   return formatFns(date, "EEE d MMM", { locale: enGB });

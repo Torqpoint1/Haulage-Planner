@@ -11,10 +11,13 @@ import {
 } from "./helpers";
 import {
   CUSTOMER_TABLES,
+  ORDER_TABLES,
   SETTINGS_TABLES,
   createCustomer,
+  createOrder,
   createSettings,
   type CustomerFixture,
+  type OrderFixture,
   type SettingsFixture,
 } from "./fixtures";
 
@@ -32,6 +35,7 @@ let settingsA: SettingsFixture;
 let settingsB: SettingsFixture;
 let customerA: CustomerFixture;
 let customerB: CustomerFixture;
+let orderA: OrderFixture;
 const fileA = () => `${orgA.id}/documents/delivery-note.txt`;
 
 beforeAll(async () => {
@@ -48,6 +52,8 @@ beforeAll(async () => {
     createCustomer(orgA.admin.client, "alpha"),
     createCustomer(orgB.admin.client, "bravo"),
   ]);
+  orderA = await createOrder(orgA.admin.client, "alpha", settingsA, customerA);
+  await createOrder(orgB.admin.client, "bravo", settingsB, customerB);
 
   const { data, error } = await orgA.admin.client
     .rpc("create_invitation", { invite_email: "pending@example.test", invite_role: "office" })
@@ -69,6 +75,7 @@ const TABLES: { table: string; orgColumn: string; patch: Record<string, unknown>
   { table: "audit_log", orgColumn: "organisation_id", patch: { action: "delete" } },
   ...SETTINGS_TABLES.map((t) => ({ ...t, orgColumn: "organisation_id" })),
   ...CUSTOMER_TABLES.map((t) => ({ ...t, orgColumn: "organisation_id" })),
+  ...ORDER_TABLES.map((t) => ({ ...t, orgColumn: "organisation_id" })),
 ];
 
 /** Clients that must never see Organisation A's data. */
@@ -422,5 +429,65 @@ describe("customers, sites and contacts can't be linked across organisations", (
       .eq("id", customerA.siteId)
       .single();
     expect(data?.last_verified_at).toBeNull();
+  });
+});
+
+describe("orders can't be linked across organisations", () => {
+  const b = () => orgB.admin.client;
+  const base = (over: Record<string, unknown>) => ({
+    customer_id: customerB.customerId,
+    site_id: customerB.siteId,
+    order_ref: `X-${Math.random().toString(36).slice(2, 8)}`,
+    required_date: "2026-10-12",
+    ...over,
+  });
+
+  it("an order can't use A's customer or site, or a site from another customer", async () => {
+    for (const order of [
+      base({ customer_id: customerA.customerId, site_id: customerA.siteId }),
+      base({ site_id: customerA.siteId }),
+    ]) {
+      const { error } = await b().rpc("save_order", {
+        target_order_id: null,
+        order_data: order,
+        lines: [],
+      });
+      expect(error).not.toBeNull();
+    }
+  });
+
+  it("an order line can't use A's unit type", async () => {
+    const { error } = await b().rpc("save_order", {
+      target_order_id: null,
+      order_data: base({}),
+      lines: [{ unit_type_id: settingsA.unitTypeId, quantity: 1, weight_per_unit_kg: 1 }],
+    });
+    expect(error).not.toBeNull();
+  });
+
+  it("B can't rewrite A's order through save_order or link it to a quote", async () => {
+    const before = await snapshot("orders", "organisation_id");
+    const { error } = await b().rpc("save_order", {
+      target_order_id: orderA.orderId,
+      order_data: base({}),
+      lines: [],
+    });
+    expect(error).not.toBeNull();
+    expect(await snapshot("orders", "organisation_id")).toEqual(before);
+
+    const { data: quote } = await b()
+      .from("quote_requests")
+      .insert({ haulier_id: settingsB.haulierId })
+      .select("id")
+      .single();
+    const link = await b()
+      .from("quote_request_orders")
+      .insert({ quote_request_id: quote!.id, order_id: orderA.orderId });
+    expect(link.error).not.toBeNull();
+  });
+
+  it("A's order history isn't visible to B, even to B's office staff", async () => {
+    const { data } = await b().from("audit_log").select("id").eq("record_id", orderA.orderId);
+    expect(data).toEqual([]);
   });
 });

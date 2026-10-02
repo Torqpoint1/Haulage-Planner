@@ -136,6 +136,61 @@ for (const theme of THEMES) {
         await shot("site-restricted");
       });
 
+      test("order screens", async ({ page }) => {
+        test.setTimeout(90_000);
+        const shot = async (name: string) => {
+          await settle(page);
+          await expectNoOverflow(page);
+          await page.screenshot({
+            path: `screenshots/${theme}/${width}/${name}.png`,
+            fullPage: true,
+          });
+        };
+        await page.goto("/orders?q=SO-241");
+        await expect(page.getByRole("link", { name: "SO-24102" }).first()).toBeVisible();
+        await shot("orders-list");
+        await page.goto("/orders?q=no-such-order");
+        await expect(page.getByRole("heading", { name: "No orders match" })).toBeVisible();
+        await shot("orders-empty");
+
+        await page.goto("/orders?q=SO-24102");
+        await page.getByRole("link", { name: "SO-24102" }).first().click();
+        await expect(page.getByRole("heading", { level: 1, name: "SO-24102" })).toBeVisible();
+        await shot("order");
+        await page.getByRole("button", { name: "Update readiness" }).click();
+        await shot("order-readiness");
+
+        await page.getByRole("link", { name: "Edit order" }).click();
+        await expect(page.getByRole("heading", { level: 1, name: "Edit SO-24102" })).toBeVisible();
+        await shot("order-edit");
+
+        await page.goto("/orders/new");
+        await expect(page.getByRole("heading", { level: 1, name: "New order" })).toBeVisible();
+        await page.getByRole("button", { name: "Create order" }).click();
+        await expect(page.getByText("Choose the customer.")).toBeVisible();
+        await shot("order-new-errors");
+
+        await page.goto("/orders/import");
+        await expect(page.getByRole("heading", { level: 1, name: "Import orders" })).toBeVisible();
+        await shot("orders-import");
+        const csv = [
+          "Order No,Account,Delivery Postcode,Required date,Unit,Qty",
+          "SHOT-1,HB001,GL5 3QF,01/12/2030,EUR,2",
+          "SHOT-2,Nobody Ltd,GL5 3QF,01/12/2030,EUR,2",
+          "SHOT-3,MJ014,GL1 2BB,31/02/2030,XYZ,0",
+        ].join("\n");
+        await page.getByLabel("Choose a CSV file").setInputFiles({
+          name: "orders-from-sage.csv",
+          mimeType: "text/csv",
+          buffer: Buffer.from(csv),
+        });
+        await expect(page.getByRole("heading", { name: "Match your columns" })).toBeVisible();
+        await shot("orders-import-map");
+        await page.getByRole("button", { name: /^Check/ }).click();
+        await expect(page.getByText("Problem rows", { exact: true })).toBeVisible();
+        await shot("orders-import-check");
+      });
+
       test("users and roles", async ({ page }) => {
         await page.goto("/settings/users");
         await expect(page.getByRole("heading", { level: 1, name: "Users & roles" })).toBeVisible();

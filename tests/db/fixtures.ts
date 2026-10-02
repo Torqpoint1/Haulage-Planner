@@ -23,11 +23,10 @@ export async function createSettings(admin: SupabaseClient, label: string, drive
     postcode: "GL5 3AA",
     loading_equipment: ["forklift"],
     opening_hours: { mon: { open: "07:00", close: "17:00" } },
-    is_default: true,
   });
   const unitTypeId = await insert(admin, "unit_types", {
-    name: "Door pack",
-    short_code: "DP",
+    name: `Door pack ${label}`,
+    short_code: `${label.slice(0, 3).toUpperCase()}DP`,
     length_mm: 2200,
     width_mm: 1000,
     height_mm: 1200,
@@ -35,8 +34,8 @@ export async function createSettings(admin: SupabaseClient, label: string, drive
     must_stay_upright: true,
   });
   const vehicleId = await insert(admin, "vehicles", {
-    name: "Luton 1",
-    registration: "AB12 CDE",
+    name: `Luton ${label}`,
+    registration: `AB12 ${label.slice(0, 3).toUpperCase()}`,
     vehicle_type: "luton",
     deck_length_mm: 4000,
     deck_width_mm: 2000,
@@ -59,11 +58,11 @@ export async function createSettings(admin: SupabaseClient, label: string, drive
     user_id: driverUserId ?? null,
   });
   const zoneId = await insert(admin, "postcode_zones", {
-    name: "Gloucestershire",
+    name: `Gloucestershire ${label}`,
     postcode_areas: ["GL"],
   });
   const haulierId = await insert(admin, "hauliers", {
-    name: "Severn Pallets",
+    name: `Severn Pallets ${label}`,
     haulier_type: "pallet_network",
     coverage_areas: ["GL", "NP"],
   });
@@ -145,4 +144,63 @@ export const CUSTOMER_TABLES: { table: string; patch: Record<string, unknown> }[
   { table: "sites", patch: { no_hgvs: false } },
   { table: "contacts", patch: { phone: "0" } },
   { table: "postcode_lookups", patch: { latitude: 50 } },
+];
+
+export type OrderFixture = { orderId: string; quoteRequestId: string };
+
+/** An order with one line, a document record, a quote request and an import mapping. */
+export async function createOrder(
+  client: SupabaseClient,
+  label: string,
+  settings: SettingsFixture,
+  customer: CustomerFixture,
+): Promise<OrderFixture> {
+  const { data: orderId, error } = await client.rpc("save_order", {
+    target_order_id: null,
+    order_data: {
+      customer_id: customer.customerId,
+      site_id: customer.siteId,
+      order_ref: `${label.toUpperCase()}-1001`,
+      customer_po: `PO-${label}-77`,
+      delivery_note_number: `DN-${label}-55`,
+      invoice_number: `INV-${label}-33`,
+      required_date: "2026-10-12",
+    },
+    lines: [{ unit_type_id: settings.unitTypeId, quantity: 4, weight_per_unit_kg: 140 }],
+  });
+  if (error) throw new Error(`save_order: ${error.message}`);
+  const { data: order } = await client
+    .from("orders")
+    .select("organisation_id")
+    .eq("id", orderId)
+    .single();
+  await insert(client, "order_attachments", {
+    order_id: orderId,
+    storage_path: `${order!.organisation_id}/orders/${orderId}/delivery-note.pdf`,
+    file_name: "delivery-note.pdf",
+    content_type: "application/pdf",
+    size_bytes: 1024,
+  });
+  const quoteRequestId = await insert(client, "quote_requests", { haulier_id: settings.haulierId });
+  await insert(client, "quote_request_orders", {
+    quote_request_id: quoteRequestId,
+    order_id: orderId,
+  });
+  const { error: mapError } = await client
+    .from("csv_import_mappings")
+    .upsert(
+      { import_type: "orders", mapping: { order_ref: "Order No" } },
+      { onConflict: "organisation_id,import_type" },
+    );
+  if (mapError) throw new Error(`csv_import_mappings: ${mapError.message}`);
+  return { orderId: orderId as string, quoteRequestId };
+}
+
+export const ORDER_TABLES: { table: string; patch: Record<string, unknown> }[] = [
+  { table: "orders", patch: { readiness: "ready" } },
+  { table: "order_lines", patch: { quantity: 999 } },
+  { table: "order_attachments", patch: { file_name: "hijacked.pdf" } },
+  { table: "quote_requests", patch: { status: "accepted" } },
+  { table: "quote_request_orders", patch: { order_id: "00000000-0000-0000-0000-000000000000" } },
+  { table: "csv_import_mappings", patch: { mapping: {} } },
 ];
