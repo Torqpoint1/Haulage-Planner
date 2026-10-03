@@ -44,13 +44,32 @@ export async function expectNoOverflow(page: Page) {
       const style = getComputedStyle(el);
       if (style.display === "none" || style.visibility === "hidden") continue;
       if (el.closest(".leaflet-container, [aria-hidden='true'], .sr-only")) continue;
-      if (["hidden", "auto", "scroll", "clip"].includes(style.overflowX)) continue;
-      if (el.scrollWidth > el.clientWidth + 1 && el.clientWidth > 0) {
-        const hasOwnText = Array.from(el.childNodes).some(
-          (n) => n.nodeType === Node.TEXT_NODE && n.textContent?.trim(),
-        );
-        if (hasOwnText)
-          spills.push(`${el.tagName.toLowerCase()}: "${el.textContent?.trim().slice(0, 40)}"`);
+      const hasOwnText = Array.from(el.childNodes).some(
+        (n) => n.nodeType === Node.TEXT_NODE && n.textContent?.trim(),
+      );
+      if (!hasOwnText) continue;
+      const label = `${el.tagName.toLowerCase()}: "${el.textContent?.trim().slice(0, 40)}"`;
+      if (
+        !["hidden", "auto", "scroll", "clip"].includes(style.overflowX) &&
+        el.scrollWidth > el.clientWidth + 1 &&
+        el.clientWidth > 0
+      ) {
+        spills.push(label);
+        continue;
+      }
+      // Text that fits its own box but sticks out of the bordered card or panel around it.
+      const box = el.parentElement?.closest<HTMLElement>("article, li, [role='dialog'], section");
+      // Content inside a scrolling or clipping container is meant to move; skip it.
+      let clipped = false;
+      for (let a = el.parentElement; a && box && a !== box; a = a.parentElement) {
+        if (["hidden", "auto", "scroll", "clip"].includes(getComputedStyle(a).overflowX))
+          clipped = true;
+      }
+      if (box && !clipped && style.position !== "absolute" && style.position !== "fixed") {
+        const r = el.getBoundingClientRect();
+        const b = box.getBoundingClientRect();
+        if (r.width > 0 && (r.right > b.right + 1 || r.left < b.left - 1))
+          spills.push(`${label} (outside its card)`);
       }
     }
     return { pageOverflow, spills };

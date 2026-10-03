@@ -107,3 +107,9 @@ export const COLOUR_TAGS = options([
   ["load-9", "Slate"],
   ["load-10", "Orange"],
 ] as const);
+
+export const COMPLIANCE_REQUIREMENTS = options([
+  ["euro_6", "Euro 6 / VI engine"],
+  ["caz_compliant", "Clean air zone compliant"],
+  ["hgv_permit", "London HGV Safety Permit"],
+] as const);

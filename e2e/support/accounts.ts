@@ -55,6 +55,7 @@ export async function createCompany(
   await seedSettings(admin.client);
   await seedCustomers(admin.client);
   await seedOrders(admin.client);
+  await seedPlanning(admin.client);
   return { adminEmail: admin.email, members: created };
 }
 
@@ -144,7 +145,7 @@ async function seedSettings(client: Client) {
       payload_kg: 1000,
       gross_weight_kg: 3500,
       overall_length_m: 6.7,
-      unload_methods: ["tail_lift", "rear"],
+      unload_methods: ["tail_lift"],
       tail_lift_max_kg: 750,
       cost_per_mile: 0.62,
       cost_per_driver_hour: 16,
@@ -165,7 +166,7 @@ async function seedSettings(client: Client) {
       cost_per_mile: 0.95,
       cost_per_driver_hour: 17.5,
       euro_standard: "Euro 6",
-      caz_compliant: true,
+      caz_compliant: false,
     },
     {
       name: "18t curtainsider",
@@ -481,4 +482,187 @@ async function seedOrders(client: Client) {
   ];
   const { error } = await client.rpc("import_orders", { orders });
   if (error) throw new Error(`orders: ${error.message}`);
+}
+
+/** The next working day on or after `daysAhead` days from today (London). */
+export function workingDay(daysAhead: number) {
+  const d = new Date(Date.now() + daysAhead * 86_400_000);
+  const iso = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(d);
+  const weekday = () =>
+    new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", weekday: "short" }).format(d);
+  while (["Sat", "Sun"].includes(weekday())) d.setTime(d.getTime() + 86_400_000);
+  return iso();
+}
+
+/** The first three working days from today: d0 (today, or Monday at a weekend), d1, d2. */
+export function planningDays() {
+  const d0 = workingDay(0);
+  const after = (iso: string) => {
+    let n = 1;
+    while (workingDay(n) <= iso) n += 1;
+    return workingDay(n);
+  };
+  const d1 = after(d0);
+  return { d0, d1, d2: after(d1) };
+}
+
+/**
+ * Loads for the first three working days that, between them, show every
+ * warning in spec 7.2 (returnable assets arrive in Stage 9). Orders are PL-3xx.
+ */
+async function seedPlanning(client: Client) {
+  const { d0, d1, d2 } = planningDays();
+  const [
+    { data: units },
+    { data: vehicles },
+    { data: hauliers },
+    { data: drivers },
+    { data: depots },
+  ] = await Promise.all([
+    client.from("unit_types").select("id, short_code"),
+    client.from("vehicles").select("id, name"),
+    client.from("hauliers").select("id, name"),
+    client.from("drivers").select("id, name"),
+    client.from("depots").select("id").eq("is_default", true),
+  ]);
+  const unit = (code: string) => units!.find((u) => u.short_code === code)!.id;
+  const vehicle = (name: string) => vehicles!.find((v) => v.name === name)!.id;
+  const driver = (name: string) => drivers!.find((d) => d.name === name)!.id;
+
+  // A customer far enough away to run into driving hours and a clean air zone.
+  const [tyneside] = await insert(client, "customers", [
+    { name: "Tyneside Joinery", account_ref: "TYN05" },
+  ]);
+  await insert(client, "sites", [
+    {
+      customer_id: tyneside,
+      name: "Gateshead works",
+      postcode: "NE8 3AA",
+      latitude: 54.95702,
+      longitude: -1.60338,
+      location_source: "postcode",
+      site_equipment: ["forklift"],
+      opening_hours: Object.fromEntries(
+        ["mon", "tue", "wed", "thu", "fri"].map((d) => [d, { open: "06:00", close: "18:00" }]),
+      ),
+      last_verified_at: new Date().toISOString(),
+    },
+  ]);
+  const { data: sites } = await client.from("sites").select("id, customer_id, name");
+  const site = (name: string) => sites!.find((s) => s.name === name)!;
+
+  const order = (
+    ref: string,
+    siteName: string,
+    lines: [string, number, number][],
+    fields: Record<string, unknown> = {},
+  ) => ({
+    order: {
+      customer_id: site(siteName).customer_id,
+      site_id: site(siteName).id,
+      order_ref: ref,
+      required_date: d1,
+      readiness: "ready",
+      ...fields,
+    },
+    lines: lines.map(([code, quantity, weight]) => ({
+      unit_type_id: unit(code),
+      quantity,
+      weight_per_unit_kg: weight,
+    })),
+  });
+  const orders = [
+    order("PL-301", "Gloucester workshop", [["DP", 3, 140]], {
+      readiness: "part_ready",
+      missing_items: "1 door frame",
+      expected_ready_date: d0,
+    }),
+    order("PL-302", "Plot 14, Meadow View", [["DP", 2, 140]]),
+    order("PL-303", "Stroud yard", [["UKP", 14, 400]], { required_date: d0 }),
+    order("PL-304", "Plot 14, Meadow View", [["EUR", 4, 300]], {
+      required_date: d2,
+      readiness: "not_started",
+    }),
+    order("PL-305", "Newport depot", [["EUR", 2, 300]], { required_date: d0 }),
+    order("PL-306", "Gateshead works", [["EUR", 4, 300]], { required_date: d2 }),
+    order("PL-307", "Gloucester workshop", [["UKP", 1, 800]], { required_date: d2 }),
+    order("PL-308", "Stroud yard", [["EUR", 6, 300]], { required_date: d0 }),
+  ];
+  const { error } = await client.rpc("import_orders", { orders });
+  if (error) throw new Error(`planning orders: ${error.message}`);
+  const { data: saved } = await client
+    .from("orders")
+    .select("id, order_ref")
+    .like("order_ref", "PL-3%");
+  const orderId = (ref: string) => saved!.find((o) => o.order_ref === ref)!.id;
+
+  async function load(row: Record<string, unknown>, refs: string[], driverNames: string[] = []) {
+    const [id] = await insert(client, "loads", [{ depot_id: depots![0].id, ...row }]);
+    for (const ref of refs) {
+      const { error: addError } = await client.rpc("add_order_to_load", {
+        target_load: id,
+        target_order: orderId(ref),
+      });
+      if (addError) throw new Error(`add ${ref}: ${addError.message}`);
+    }
+    if (driverNames.length) {
+      await insert(
+        client,
+        "load_drivers",
+        driverNames.map((n) => ({ load_id: id, driver_id: driver(n) })),
+      );
+    }
+    return id;
+  }
+  const stopFor = async (loadId: string) =>
+    (await client.from("load_stops").select("id, sequence").eq("load_id", loadId).order("sequence"))
+      .data!;
+
+  // d0: a clean, confirmed run, and a pallet network drop with no booking yet.
+  const clean = await load(
+    { load_date: d0, vehicle_id: vehicle("18t curtainsider"), crew_size: 2 },
+    ["PL-308"],
+    ["Dave Hughes"],
+  );
+  await client
+    .from("load_stops")
+    .update({ confirmed: true, confirmed_by: "Gemma Hill", confirmation_method: "phone" })
+    .eq("load_id", clean);
+  await client.from("loads").update({ status: "confirmed" }).eq("id", clean);
+  const network = await load(
+    { load_date: d0, haulier_id: hauliers!.find((h) => h.name === "Severn Pallet Network")!.id },
+    ["PL-305"],
+  );
+  await client.from("load_stops").update({ eta_from: "17:15" }).eq("load_id", network);
+
+  // d1: doors to tight sites on the Luton, and too much on the 7.5t.
+  await load(
+    { load_date: d1, vehicle_id: vehicle("Luton 1"), crew_size: 1 },
+    ["PL-301", "PL-302"],
+    ["Gareth Morgan"],
+  );
+  const heavy = await load(
+    { load_date: d1, vehicle_id: vehicle("7.5t curtainsider"), crew_size: 1 },
+    ["PL-303"],
+    ["Dave Hughes"],
+  );
+  for (const s of await stopFor(heavy)) {
+    await client
+      .from("load_stops")
+      .update({ confirmed: true, confirmed_by: "Gemma Hill", confirmation_method: "email" })
+      .eq("id", s.id);
+  }
+
+  // d2: an 18t that can't get into Plot 14, a long run to Gateshead, and a heavy pallet for the tail lift.
+  await load(
+    { load_date: d2, vehicle_id: vehicle("18t curtainsider"), crew_size: 2 },
+    ["PL-304"],
+    ["Dave Hughes"],
+  );
+  await load(
+    { load_date: d2, vehicle_id: vehicle("7.5t curtainsider"), crew_size: 1 },
+    ["PL-306"],
+    ["Gareth Morgan"],
+  );
+  await load({ load_date: d2, vehicle_id: vehicle("Luton 1"), crew_size: 1 }, ["PL-307"]);
 }

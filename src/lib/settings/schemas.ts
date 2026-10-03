@@ -26,6 +26,7 @@ import {
   PALLET_SIZES,
   UNLOAD_METHODS,
   VEHICLE_TYPES,
+  COMPLIANCE_REQUIREMENTS,
 } from "./options";
 
 /**
@@ -423,3 +424,73 @@ const organisationSchema = z.object({
 });
 
 export const parseOrganisation = (input: FormObject) => parse(organisationSchema, input);
+
+// ---------------------------------------------------------------------------
+// Compliance zones (6.13)
+// ---------------------------------------------------------------------------
+
+const DISTRICT = /^[A-Z]{1,2}([0-9][0-9A-Z]?)?$/;
+
+const complianceZoneSchema = z
+  .object({
+    name: text("a name", 80),
+    requirement: choice(values(COMPLIANCE_REQUIREMENTS), "what vehicles need"),
+    min_gross_kg: optionalNumber("the lightest vehicle it applies to", {
+      integer: true,
+      min: 0,
+      max: 60000,
+      unit: "kg",
+    }),
+    max_gross_kg: optionalNumber("the heaviest vehicle it applies to", {
+      integer: true,
+      min: 0,
+      max: 60000,
+      unit: "kg",
+    }),
+    postcode_districts: z.preprocess(
+      (v) => (typeof v === "string" ? v : ""),
+      z.string().transform((value, ctx) => {
+        const parts = [
+          ...new Set(
+            value
+              .toUpperCase()
+              .split(/[\s,;]+/)
+              .filter(Boolean),
+          ),
+        ];
+        const invalid = parts.filter((p) => !DISTRICT.test(p));
+        if (invalid.length) {
+          ctx.addIssue({
+            code: "custom",
+            message: `${invalid.join(", ")} ${invalid.length === 1 ? "isn't a" : "aren't"} postcode area${invalid.length === 1 ? "" : "s"} or district${invalid.length === 1 ? "" : "s"}. Use e.g. EC, SW1A or BR1.`,
+          });
+          return z.NEVER;
+        }
+        if (!parts.length) {
+          ctx.addIssue({
+            code: "custom",
+            message: "Enter the postcode areas or districts the zone covers.",
+          });
+          return z.NEVER;
+        }
+        return parts.sort();
+      }),
+    ),
+    active: checkbox,
+    notes: optionalText(1000),
+  })
+  .superRefine((zone, ctx) => {
+    if (
+      zone.min_gross_kg != null &&
+      zone.max_gross_kg != null &&
+      zone.max_gross_kg < zone.min_gross_kg
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["max_gross_kg"],
+        message: "The heaviest must be more than the lightest.",
+      });
+    }
+  });
+
+export const parseComplianceZone = (input: FormObject) => parse(complianceZoneSchema, input);

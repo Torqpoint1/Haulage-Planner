@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { SCREENS, THEMES, WIDTHS, expectNoOverflow, setPreferences } from "./helpers";
+import { planningDays } from "./support/accounts";
 
 const SETTINGS_SCREENS = [
   ["/settings", "Settings"],
@@ -11,6 +12,7 @@ const SETTINGS_SCREENS = [
   ["/settings/hauliers", "Hauliers & rate cards"],
   ["/settings/zones", "Postcode zones"],
   ["/settings/thresholds", "Warning thresholds"],
+  ["/settings/compliance-zones", "Compliance zones"],
 ] as const;
 
 /**
@@ -189,6 +191,43 @@ for (const theme of THEMES) {
         await page.getByRole("button", { name: /^Check/ }).click();
         await expect(page.getByText("Problem rows", { exact: true })).toBeVisible();
         await shot("orders-import-check");
+      });
+
+      test("plan screens", async ({ page }) => {
+        test.setTimeout(90_000);
+        const { d1 } = planningDays();
+        const shot = async (name: string, fullPage = true) => {
+          await settle(page);
+          await expectNoOverflow(page);
+          await page.screenshot({ path: `screenshots/${theme}/${width}/${name}.png`, fullPage });
+        };
+        await page.goto(`/plan?week=${d1}`);
+        await expect(page.getByRole("article", { name: "Luton 1 load" }).first()).toBeVisible();
+        await shot("plan-week");
+
+        await page.goto(`/plan?week=${d1}&view=day&day=${d1}`);
+        await expect(page.getByRole("article", { name: "Luton 1 load" }).first()).toBeVisible();
+        await shot("plan-day");
+
+        const card = page.getByRole("article", { name: "Luton 1 load" }).first();
+        const panel = page.getByRole("dialog", { name: "Luton 1" });
+        await expect(async () => {
+          await card.getByRole("button").first().click();
+          await expect(panel).toBeVisible({ timeout: 2_000 });
+        }).toPass();
+        await settle(page);
+        await page.screenshot({ path: `screenshots/${theme}/${width}/state-load-panel.png` });
+        await panel.getByRole("button", { name: "Booking and confirmation" }).first().click();
+        await page.screenshot({ path: `screenshots/${theme}/${width}/state-stop-form.png` });
+        await page.keyboard.press("Escape");
+
+        await page.goto(`/plan?week=${d1}`);
+        await page
+          .getByRole("button", { name: /^New load on/ })
+          .first()
+          .click();
+        await expect(page.getByRole("dialog", { name: "New load" })).toBeVisible();
+        await page.screenshot({ path: `screenshots/${theme}/${width}/state-new-load.png` });
       });
 
       test("users and roles", async ({ page }) => {

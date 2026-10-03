@@ -9,23 +9,27 @@ Build in the stages of spec section 14, in order, and only start a stage once th
 
 ## Current stage
 
-**Stage 4: Orders. Complete; awaiting sign-off.** (Stages 0–3 signed off.)
+**Stage 5: Planning core. Complete; awaiting sign-off.** (Stages 0–4 signed off.)
 
-- Done: orders with lines (unit type, quantity, weight per unit defaulting to the unit's typical
-  weight), all four references, date window, urgency, readiness (missing items, expected ready
-  date), delivery instructions pre-filled from the site, documents (PDF/photos in storage, signed
-  links), plain-English history from the audit log, cancel/reinstate/delete. Search by order ref,
-  PO, delivery note, invoice, customer name or account ref, site name or postcode (with or
-  without the space), plus readiness/status filters, saved filters, column chooser and CSV
-  export. CSV import wizard: upload, column matching (guessed from headers, remembered per
-  organisation), server-side check with row-by-row problems, import of the valid orders, problem
-  rows downloadable with a Problem column, template download. `quote_requests` table (6.5) is in
-  place for Stage 7. 213 database tests.
-- Deferred: customer page Orders tab; customer/site and vehicle CSV imports (spec 11) and the
-  Settings import/export section; saved order filters are per browser (localStorage) until
-  per-user preferences exist.
+- Done: plan board (week Mon–Fri with Sat/Sun toggle, day view, URL-driven), unplanned order
+  pool with search and filters (due, readiness, postcode zone, urgency, customer), load cards
+  (vehicle/haulier, driver, stops, space and weight bars, estimated miles and cost, warnings),
+  drag-and-drop with a live capacity preview before dropping, plus "Add to load" menus and
+  up/down buttons as non-drag alternatives. Load side panel: summary, warnings with working
+  fixes, override with reason, dismiss (logged), stops with drag/button reorder, booking and
+  confirmation fields, status actions. Confirming re-runs every check on the server and refuses
+  while an un-overridden blocking warning remains. All 18 checks of spec 7.2 as pure functions
+  with unit tests. Compliance zones seeded per organisation (Settings shows the data date).
+  261 database tests.
+- Decisions (agreed with the user): compliance zone data is seeded from published boundaries
+  as of 02/10/2026 and admin-editable; ASSET_OVERDUE is written and tested but has no data until
+  Stage 9; run times and ETAs are straight-line × 1.3 at 30 mph plus stop time, always labelled
+  "estimate", until road routing in Stage 6.
+- Deferred: suggested loads, cheapest valid option, fill the gaps, stop-order suggestion and
+  real road distances/route lines (Stage 6); customer page Orders tab; customer/site and vehicle
+  CSV imports; saved order filters per browser.
 - Not yet: emailed invitations and password reset (need Resend); GDPR export/deletion.
-- Next: **Stage 5: Rules engine**.
+- Next: **Stage 6: Map and suggestions**.
 - Open: no hosted Supabase project yet. postcodes.io and OpenRouteService are blocked by this
   cloud environment's network policy; browser tests use `e2e/support/mock-postcodes.mjs`
   (started by Playwright, `POSTCODES_API_URL=http://localhost:3199`).
@@ -76,7 +80,7 @@ In the Claude Code cloud environment, Chromium is preinstalled and `@playwright/
 - `src/components/theme`: theme/density provider plus an inline pre-paint script (no flash).
 - `src/lib/format.ts`: **all** UK formatting (dd/mm/yyyy, 24h, kg, mm, miles, £, Europe/London).
 - `src/lib/color.ts`: WCAG contrast maths and per-organisation accent derivation.
-- `src/lib/rules/types.ts`: the `Warning` contract for the rules engine (checks arrive in Stage 5,
+- `src/lib/rules/types.ts`: the `Warning` contract for the rules engine (checks live alongside,
   one pure function per file, `(context) => Warning[]`).
 - `src/lib/services/*`: third-party providers behind small modules so they can be swapped (spec 4).
   `tiles.ts` supports MapTiler/Stadia; never the public OSM tile servers.
@@ -113,6 +117,27 @@ In the Claude Code cloud environment, Chromium is preinstalled and `@playwright/
 - Orders DB: `save_order(id, order, lines)` and `import_orders(orders)` are SECURITY INVOKER and
   atomic. `orders.search_text` is maintained by triggers (including when a customer or site is
   renamed) and indexed with pg_trgm. Members may read `audit_log` rows for order tables only.
+- `src/lib/rules/`: the rules engine (spec 7). `context.ts` (`RuleContext`: everything a check
+  reads, already loaded), `checks/<code>.ts` (one pure `(ctx) => Warning[]` per check),
+  `index.ts` (`CHECKS`, `runChecks`, `withDecisions`, `unresolvedBlocking`, `warningKey`),
+  helpers `capacity.ts` (matrix, else floor space with stacking), `unloading.ts` (which methods
+  work for a unit at a site), `estimate.ts` (run estimate), `time.ts` (London times).
+  Fixes are `{ id, label, params }`; the plan board maps ids (`switch-vehicle`, `remove-order`,
+  `set-crew`, `edit-stop`, `edit-load`, `move-load-date`, `verify-site`) to actions.
+  `switchVehicleFixes` re-runs the same check with each free vehicle to offer only ones that fix it.
+- `src/lib/planning/`: `data.ts` (server: one week of loads, orders, sites, fleet, zones,
+  decisions), `build.ts` (load → `RuleContext`, metrics, warnings; also the drag preview),
+  `schemas.ts`, `types.ts`, `labels.ts`.
+- `src/app/(app)/plan/`: `page.tsx` (search params week/view/day/weekend/load), `plan-board.tsx`
+  (dnd-kit, pointer-based drop), `order-pool.tsx`, `load-card.tsx`, `load-panel.tsx`,
+  `load-form.tsx`, `actions.ts` (`loads.edit`; status via `plans.approve`; overrides via
+  `warnings.override`).
+- Planning DB: `loads`, `load_drivers`, `load_stops` (booking + confirmation fields),
+  `stop_orders` (one stop per order, same site enforced by composite keys), `warning_overrides`
+  (override or dismiss, keyed `code:entity_type:entity_id`), `compliance_zones` (seeded from
+  `private.compliance_zone_defaults` when an organisation is created). Functions
+  `add_order_to_load`, `remove_order_from_load`, `reorder_stops` (atomic, SECURITY INVOKER).
+  Order status follows its load by trigger; editing a confirmed load sends it back to planned.
 - `src/lib/branding.ts`: logo storage paths and signed URLs; `(app)/layout.tsx` injects the
   organisation's accent colour.
 
@@ -138,6 +163,9 @@ In the Claude Code cloud environment, Chromium is preinstalled and `@playwright/
 - **CSV imports** validate on the server with a pure planner, report problems against the
   spreadsheet row number, import valid rows all-or-nothing per batch, and send only the mapped
   columns (server action body limit is 4 MB, max 5,000 rows).
+- **Warnings are calculated, never stored.** Only the planner's decision (override with reason,
+  or dismissal) is stored. Anything that blocks must be re-checked on the server before it's
+  allowed (see `setLoadStatus`).
 - **Lists** pass `renderCard` to `DataTable` so phones and tablets get stacked cards instead of a
   sideways-scrolling table.
 - **Roles are enforced three times**: hidden in the UI (`navFor`, `can`), checked in pages and

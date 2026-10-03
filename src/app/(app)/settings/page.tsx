@@ -78,7 +78,12 @@ const SECTIONS: { title: string; description: string; icon: LucideIcon; href?: s
     icon: SlidersHorizontal,
     href: "/settings/thresholds",
   },
-  { title: "Compliance zones", description: "London and clean air zone rules.", icon: ShieldAlert },
+  {
+    title: "Compliance zones",
+    description: "London and clean air zone rules.",
+    icon: ShieldAlert,
+    href: "/settings/compliance-zones",
+  },
   {
     title: "Import/export",
     description: "Bring data in from spreadsheets, or export it all.",

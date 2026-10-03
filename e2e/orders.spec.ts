@@ -19,6 +19,16 @@ async function choose(page: Page, scope: Page | Locator, label: string, option: 
   await page.getByRole("option", { name: option, exact: true }).click();
 }
 
+/** Upload until the wizard reacts: a file set before the page hydrates is ignored. */
+async function upload(page: Page, file: { name: string; mimeType: string; buffer: Buffer }) {
+  await expect(async () => {
+    await page.getByLabel("Choose a CSV file").setInputFiles(file);
+    await expect(page.getByRole("heading", { name: "Match your columns" })).toBeVisible({
+      timeout: 2_000,
+    });
+  }).toPass();
+}
+
 const ukDate = (daysAhead: number) => {
   const d = new Date(Date.now() + daysAhead * 86_400_000);
   return new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London" }).format(d);
@@ -195,7 +205,7 @@ test("a 200-row CSV imports with row-by-row errors, and the column matches are r
   await page.getByRole("button", { name: "Download template" }).click();
   expect((await template).suggestedFilename()).toBe("order-import-template.csv");
 
-  await page.getByLabel("Choose a CSV file").setInputFiles(file);
+  await upload(page, file);
   await expect(page.getByText("orders-export.csv has 200 rows.")).toBeVisible();
   // Guessed from the headers…
   await expect(field(page, "Order ref *")).toContainText("Order No");
@@ -249,7 +259,7 @@ test("a 200-row CSV imports with row-by-row errors, and the column matches are r
 
   // Next time, the same file's columns are matched straight away, "When" included.
   await page.goto("/orders/import");
-  await page.getByLabel("Choose a CSV file").setInputFiles(file);
+  await upload(page, file);
   await expect(page.getByText("We've used the matches from your last import")).toBeVisible();
   await expect(field(page, "Required date *")).toContainText("When");
   await page.getByRole("button", { name: "Check 200 rows" }).click();

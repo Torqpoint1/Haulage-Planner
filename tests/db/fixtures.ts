@@ -204,3 +204,43 @@ export const ORDER_TABLES: { table: string; patch: Record<string, unknown> }[] =
   { table: "quote_request_orders", patch: { order_id: "00000000-0000-0000-0000-000000000000" } },
   { table: "csv_import_mappings", patch: { mapping: {} } },
 ];
+
+export type LoadFixture = { loadId: string; stopId: string; overrideId: string };
+
+/** A load with a driver, one stop carrying the order, and an override; through the API. */
+export async function createLoad(
+  client: SupabaseClient,
+  settings: SettingsFixture,
+  order: OrderFixture,
+): Promise<LoadFixture> {
+  const loadId = await insert(client, "loads", {
+    load_date: "2026-10-12",
+    depot_id: settings.depotId,
+    vehicle_id: settings.vehicleId,
+  });
+  await insert(client, "load_drivers", { load_id: loadId, driver_id: settings.driverId });
+  const { data: stopId, error } = await client.rpc("add_order_to_load", {
+    target_load: loadId,
+    target_order: order.orderId,
+  });
+  if (error) throw new Error(`add_order_to_load: ${error.message}`);
+  const overrideId = await insert(client, "warning_overrides", {
+    load_id: loadId,
+    warning_key: `ORDER_NOT_READY:order:${order.orderId}`,
+    code: "ORDER_NOT_READY",
+    entity_type: "order",
+    entity_id: order.orderId,
+    kind: "override",
+    reason: "Production will finish first thing.",
+  });
+  return { loadId, stopId: stopId as string, overrideId };
+}
+
+export const PLANNING_TABLES: { table: string; patch: Record<string, unknown> }[] = [
+  { table: "loads", patch: { status: "confirmed" } },
+  { table: "load_drivers", patch: { driver_id: "00000000-0000-0000-0000-000000000000" } },
+  { table: "load_stops", patch: { booking_ref: "HIJACKED" } },
+  { table: "stop_orders", patch: { order_id: "00000000-0000-0000-0000-000000000000" } },
+  { table: "warning_overrides", patch: { reason: "Hijacked" } },
+  { table: "compliance_zones", patch: { name: "Hijacked zone" } },
+];

@@ -58,6 +58,7 @@ test("settings index links to every built section", async ({ page }) => {
     "Hauliers & rate cards",
     "Postcode zones",
     "Warning thresholds",
+    "Compliance zones",
   ]) {
     await expect(page.getByRole("link", { name: new RegExp(name) })).toBeVisible();
   }
@@ -242,6 +243,42 @@ test("postcode zones: areas are validated and can't overlap", async ({ page }) =
   await expect(row).toContainText("OX");
   await expect(row).toContainText("SN");
   await deleteRow(page, row, "Oxford & Swindon");
+});
+
+test("compliance zones: seeded with a data date, validated, and editing refreshes the date", async ({
+  page,
+}) => {
+  await page.goto("/settings/compliance-zones");
+  await expect(page.getByText(/Data last updated \d{2}\/\d{2}\/\d{4}/)).toBeVisible();
+  const table = list(page, "Compliance zones");
+  await expect(table.getByRole("row", { name: /London HGV Safety Permit/ })).toContainText(
+    "London HGV Safety Permit",
+  );
+  await expect(table.getByRole("row", { name: /Birmingham Clean Air Zone/ })).toContainText(
+    "Clean air zone compliant",
+  );
+
+  const panel = await openAdd(page, "/settings/compliance-zones", "zone");
+  await field(panel, "Name").fill("Oxford Zero Emission Zone");
+  await choose(page, panel, "Vehicles need", "Clean air zone compliant");
+  await field(panel, "Applies from").fill("7500");
+  await field(panel, "Applies up to").fill("3500");
+  await field(panel, "Postcode areas and districts").fill("OX1, OX1 2");
+  await save(page, "zone");
+  await expect(
+    panel.getByText("2 isn't a postcode area or district. Use e.g. EC, SW1A or BR1."),
+  ).toBeVisible();
+  await field(panel, "Postcode areas and districts").fill("ox1, ox2");
+  await save(page, "zone");
+  await expect(panel.getByText("The heaviest must be more than the lightest.")).toBeVisible();
+  await field(panel, "Applies up to").fill("");
+  await save(page, "zone");
+  const today = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London" }).format(new Date());
+  const row = table.getByRole("row", { name: /Oxford Zero Emission Zone/ });
+  await expect(row).toContainText("7,500 kg and over");
+  await expect(row).toContainText("OX1, OX2");
+  await expect(row).toContainText(today);
+  await deleteRow(page, row, "Oxford Zero Emission Zone");
 });
 
 test("hauliers and rate cards: prices per zone, validity and surcharges", async ({ page }) => {

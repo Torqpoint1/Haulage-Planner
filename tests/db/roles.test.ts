@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { createCustomer, createOrder, createSettings } from "./fixtures";
+import { createCustomer, createLoad, createOrder, createSettings } from "./fixtures";
 import { createOrg, member, service, type Role, type TestOrg } from "./helpers";
 
 /**
@@ -502,5 +502,206 @@ describe("orders: planners edit, office staff view and see history (spec 3, 9.3)
     expect(error).not.toBeNull();
     const { data } = await service.from("orders").select("id").eq("order_ref", "IMP-1");
     expect(data).toEqual([]);
+  });
+});
+
+describe("planning: loads, stops and order status (spec 6.8, 7.3)", () => {
+  let settings: Awaited<ReturnType<typeof createSettings>>;
+  let customer: Awaited<ReturnType<typeof createCustomer>>;
+  let otherSiteId: string;
+  const planner = () => member(org, "planner").client;
+
+  beforeAll(async () => {
+    settings = await createSettings(org.admin.client, "planning");
+    customer = await createCustomer(org.admin.client, "planning");
+    const { data } = await org.admin.client
+      .from("sites")
+      .insert({ customer_id: customer.customerId, name: "Second yard", postcode: "GL5 3QF" })
+      .select("id")
+      .single();
+    otherSiteId = data!.id;
+  });
+
+  async function newOrder(ref: string, siteId = customer.siteId) {
+    const { data, error } = await planner().rpc("save_order", {
+      target_order_id: null,
+      order_data: {
+        customer_id: customer.customerId,
+        site_id: siteId,
+        order_ref: ref,
+        required_date: "2026-10-12",
+      },
+      lines: [{ unit_type_id: settings.unitTypeId, quantity: 2, weight_per_unit_kg: 100 }],
+    });
+    if (error) throw error;
+    return data as string;
+  }
+  async function newLoad() {
+    const { data, error } = await planner()
+      .from("loads")
+      .insert({
+        load_date: "2026-10-12",
+        depot_id: settings.depotId,
+        vehicle_id: settings.vehicleId,
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+    return data.id as string;
+  }
+  const status = async (orderId: string) =>
+    (await service.from("orders").select("status").eq("id", orderId).single()).data?.status;
+  const stops = async (loadId: string) =>
+    (
+      await service
+        .from("load_stops")
+        .select("id, site_id, sequence")
+        .eq("load_id", loadId)
+        .order("sequence")
+    ).data ?? [];
+
+  it("orders for the same site share a stop; another site gets the next stop", async () => {
+    const load = await newLoad();
+    const [a, b, c] = [
+      await newOrder("PL-1"),
+      await newOrder("PL-2"),
+      await newOrder("PL-3", otherSiteId),
+    ];
+    for (const o of [a, b, c]) {
+      const { error } = await planner().rpc("add_order_to_load", {
+        target_load: load,
+        target_order: o,
+      });
+      expect(error).toBeNull();
+    }
+    const list = await stops(load);
+    expect(list.map((s) => [s.site_id, s.sequence])).toEqual([
+      [customer.siteId, 1],
+      [otherSiteId, 2],
+    ]);
+    expect(await status(a)).toBe("planned");
+    const { data: loadRow } = await service.from("loads").select("status").eq("id", load).single();
+    expect(loadRow?.status).toBe("planned");
+
+    // Reorder, then remove the only order at the first stop: the stop goes and the rest close up.
+    const { error: reorder } = await planner().rpc("reorder_stops", {
+      target_load: load,
+      stop_ids: [list[1].id, list[0].id],
+    });
+    expect(reorder).toBeNull();
+    expect((await stops(load)).map((s) => s.site_id)).toEqual([otherSiteId, customer.siteId]);
+    await planner().rpc("remove_order_from_load", { target_order: c });
+    expect(await status(c)).toBe("unplanned");
+    expect((await stops(load)).map((s) => [s.site_id, s.sequence])).toEqual([[customer.siteId, 1]]);
+
+    // A reorder that doesn't list every stop is refused.
+    const bad = await planner().rpc("reorder_stops", { target_load: load, stop_ids: [] });
+    expect(bad.error?.message).toMatch(/stops changed/);
+  });
+
+  it("moving an order to another load takes it off the first; deleting a load frees its orders", async () => {
+    const [first, second] = [await newLoad(), await newLoad()];
+    const order = await newOrder("PL-4");
+    await planner().rpc("add_order_to_load", { target_load: first, target_order: order });
+    await planner().rpc("add_order_to_load", { target_load: second, target_order: order });
+    expect(await stops(first)).toEqual([]);
+    expect(await stops(second)).toHaveLength(1);
+    await planner().from("loads").delete().eq("id", second);
+    expect(await status(order)).toBe("unplanned");
+  });
+
+  it("order status follows the load, and editing a confirmed load sends it back to planned", async () => {
+    const load = await newLoad();
+    const order = await newOrder("PL-5");
+    await planner().rpc("add_order_to_load", { target_load: load, target_order: order });
+    await planner().from("loads").update({ status: "confirmed" }).eq("id", load);
+    const extra = await newOrder("PL-6");
+    await planner().rpc("add_order_to_load", { target_load: load, target_order: extra });
+    const { data } = await service.from("loads").select("status").eq("id", load).single();
+    expect(data?.status).toBe("planned");
+
+    await planner().from("loads").update({ status: "loading" }).eq("id", load);
+    expect(await status(order)).toBe("loaded");
+    const locked = await planner().rpc("remove_order_from_load", { target_order: order });
+    expect(locked.error?.message).toMatch(/left the planning stage/);
+    await planner().from("loads").update({ status: "out" }).eq("id", load);
+    expect(await status(order)).toBe("out_for_delivery");
+  });
+
+  it("cancelled orders can't be planned", async () => {
+    const load = await newLoad();
+    const order = await newOrder("PL-7");
+    await planner().from("orders").update({ status: "cancelled" }).eq("id", order);
+    const { error } = await planner().rpc("add_order_to_load", {
+      target_load: load,
+      target_order: order,
+    });
+    expect(error?.message).toMatch(/cancelled and can't be planned/);
+  });
+
+  it("an override needs a written reason; a dismissal doesn't", async () => {
+    const load = await newLoad();
+    const row = { load_id: load, code: "CAPACITY_WEIGHT", entity_type: "load", entity_id: load };
+    const noReason = await planner()
+      .from("warning_overrides")
+      .insert({ ...row, warning_key: "a", kind: "override", reason: " " });
+    expect(noReason.error).not.toBeNull();
+    const dismiss = await planner()
+      .from("warning_overrides")
+      .insert({ ...row, warning_key: "b", kind: "dismiss" });
+    expect(dismiss.error).toBeNull();
+    const { data: logged } = await service
+      .from("audit_log")
+      .select("action")
+      .eq("table_name", "warning_overrides")
+      .eq("organisation_id", org.id);
+    expect(logged?.length).toBeGreaterThan(0);
+  });
+
+  for (const role of ["office", "warehouse", "driver"] as const) {
+    it(`${role} can see loads but not plan them`, async () => {
+      const order = await newOrder(`PL-${role}`);
+      const fixture = await createLoad(planner(), settings, { orderId: order, quoteRequestId: "" });
+      const { client } = member(org, role);
+      const { data: seen } = await client.from("loads").select("id").eq("id", fixture.loadId);
+      expect(seen).toHaveLength(1);
+      const { data: changed } = await client
+        .from("loads")
+        .update({ status: "confirmed" })
+        .eq("id", fixture.loadId)
+        .select();
+      expect(changed ?? []).toEqual([]);
+      await client.rpc("remove_order_from_load", { target_order: order });
+      expect(await status(order)).toBe("planned");
+      const insert = await client
+        .from("loads")
+        .insert({ load_date: "2026-10-12", depot_id: settings.depotId });
+      expect(insert.error).not.toBeNull();
+      const override = await client.from("warning_overrides").insert({
+        load_id: fixture.loadId,
+        warning_key: "x",
+        code: "CAPACITY_SPACE",
+        entity_type: "load",
+        entity_id: fixture.loadId,
+        kind: "dismiss",
+      });
+      expect(override.error).not.toBeNull();
+    });
+  }
+
+  it("every organisation starts with compliance zones that only admins can change", async () => {
+    const { data } = await member(org, "office")
+      .client.from("compliance_zones")
+      .select("name, requirement");
+    expect(data?.map((z) => z.name)).toContain("London HGV Safety Permit");
+    expect(data?.find((z) => z.name === "Birmingham Clean Air Zone")?.requirement).toBe(
+      "caz_compliant",
+    );
+    const { data: changed } = await planner()
+      .from("compliance_zones")
+      .update({ active: false })
+      .eq("organisation_id", org.id)
+      .select();
+    expect(changed ?? []).toEqual([]);
   });
 });

@@ -76,12 +76,13 @@ export function CapacityBar({
     <div className={cn("flex min-w-0 flex-col gap-1", className)}>
       <div
         className={cn(
-          "flex min-w-0 items-center justify-between gap-2",
+          // Wraps the figures under the label when space is tight, rather than spilling out.
+          "flex min-w-0 flex-wrap items-center justify-between gap-x-2",
           size === "sm" ? "text-xs" : "text-sm",
         )}
       >
-        <span className="truncate text-text-muted">{label}</span>
-        <span className="flex shrink-0 items-center gap-1">
+        <span className="shrink-0 text-text-muted">{label}</span>
+        <span className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-x-1">
           {level === "over" ? (
             <OctagonAlert className="size-3 text-danger-fg" aria-hidden />
           ) : level === "near" ? (

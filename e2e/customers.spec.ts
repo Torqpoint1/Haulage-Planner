@@ -45,7 +45,7 @@ test("customers list: search by name, account ref or postcode, and stale sites a
   await search.fill("nobody here");
   await expect(page.getByText("No customers match")).toBeVisible();
   await page.getByRole("button", { name: "Clear search" }).click();
-  await expect(table.getByRole("link")).toHaveCount(4);
+  await expect(table.getByRole("link")).toHaveCount(5);
 });
 
 test("a new customer's site captures every restriction and its postcode places the correct pin", async ({

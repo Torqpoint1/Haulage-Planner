@@ -42,6 +42,10 @@
   --spacing-popover: 288px;
   --spacing-menu: 192px;
   --spacing-content: 1280px;
+  /* Plan board: the order pool's height on wide screens. */
+  --spacing-board: calc(100vh - 32px);
+  /* The narrowest a day column gets before the days row scrolls. */
+  --spacing-day: 192px;
 
   /* ---- Typography (10.1): 12/14/16/20/24/32, weights 400/500/600 ---- */
   --font-*: initial;

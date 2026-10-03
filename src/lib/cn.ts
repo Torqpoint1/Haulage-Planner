@@ -24,6 +24,8 @@ const twMerge = extendTailwindMerge({
         "popover",
         "menu",
         "content",
+        "board",
+        "day",
       ],
     },
     classGroups: {

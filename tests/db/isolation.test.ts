@@ -12,11 +12,14 @@ import {
 import {
   CUSTOMER_TABLES,
   ORDER_TABLES,
+  PLANNING_TABLES,
   SETTINGS_TABLES,
   createCustomer,
   createOrder,
+  createLoad,
   createSettings,
   type CustomerFixture,
+  type LoadFixture,
   type OrderFixture,
   type SettingsFixture,
 } from "./fixtures";
@@ -36,6 +39,9 @@ let settingsB: SettingsFixture;
 let customerA: CustomerFixture;
 let customerB: CustomerFixture;
 let orderA: OrderFixture;
+let orderB: OrderFixture;
+let loadA: LoadFixture;
+let loadB: LoadFixture;
 const fileA = () => `${orgA.id}/documents/delivery-note.txt`;
 
 beforeAll(async () => {
@@ -53,7 +59,11 @@ beforeAll(async () => {
     createCustomer(orgB.admin.client, "bravo"),
   ]);
   orderA = await createOrder(orgA.admin.client, "alpha", settingsA, customerA);
-  await createOrder(orgB.admin.client, "bravo", settingsB, customerB);
+  orderB = await createOrder(orgB.admin.client, "bravo", settingsB, customerB);
+  [loadA, loadB] = await Promise.all([
+    createLoad(orgA.admin.client, settingsA, orderA),
+    createLoad(orgB.admin.client, settingsB, orderB),
+  ]);
 
   const { data, error } = await orgA.admin.client
     .rpc("create_invitation", { invite_email: "pending@example.test", invite_role: "office" })
@@ -76,6 +86,7 @@ const TABLES: { table: string; orgColumn: string; patch: Record<string, unknown>
   ...SETTINGS_TABLES.map((t) => ({ ...t, orgColumn: "organisation_id" })),
   ...CUSTOMER_TABLES.map((t) => ({ ...t, orgColumn: "organisation_id" })),
   ...ORDER_TABLES.map((t) => ({ ...t, orgColumn: "organisation_id" })),
+  ...PLANNING_TABLES.map((t) => ({ ...t, orgColumn: "organisation_id" })),
 ];
 
 /** Clients that must never see Organisation A's data. */
@@ -489,5 +500,63 @@ describe("orders can't be linked across organisations", () => {
   it("A's order history isn't visible to B, even to B's office staff", async () => {
     const { data } = await b().from("audit_log").select("id").eq("record_id", orderA.orderId);
     expect(data).toEqual([]);
+  });
+});
+
+describe("loads can't be linked across organisations", () => {
+  const b = () => orgB.admin.client;
+
+  it("a load can't use A's depot, vehicle or haulier", async () => {
+    for (const row of [
+      { depot_id: settingsA.depotId },
+      { depot_id: settingsB.depotId, vehicle_id: settingsA.vehicleId },
+      { depot_id: settingsB.depotId, haulier_id: settingsA.haulierId },
+    ]) {
+      const { error } = await b()
+        .from("loads")
+        .insert({ load_date: "2026-10-12", ...row });
+      expect(error).not.toBeNull();
+    }
+  });
+
+  it("B can't add A's driver, site or order to B's load", async () => {
+    const driver = await b()
+      .from("load_drivers")
+      .insert({ load_id: loadB.loadId, driver_id: settingsA.driverId });
+    expect(driver.error).not.toBeNull();
+    const stop = await b()
+      .from("load_stops")
+      .insert({ load_id: loadB.loadId, site_id: customerA.siteId, sequence: 9 });
+    expect(stop.error).not.toBeNull();
+    const rpc = await b().rpc("add_order_to_load", {
+      target_load: loadB.loadId,
+      target_order: orderA.orderId,
+    });
+    expect(rpc.error).not.toBeNull();
+    const link = await b()
+      .from("stop_orders")
+      .insert({ stop_id: loadB.stopId, order_id: orderA.orderId, site_id: customerA.siteId });
+    expect(link.error).not.toBeNull();
+  });
+
+  it("B can't move, reorder or override on A's load", async () => {
+    const before = await snapshot("load_stops", "organisation_id");
+    const add = await b().rpc("add_order_to_load", {
+      target_load: loadA.loadId,
+      target_order: orderB.orderId,
+    });
+    expect(add.error).not.toBeNull();
+    await b().rpc("reorder_stops", { target_load: loadA.loadId, stop_ids: [loadA.stopId] });
+    await b().rpc("remove_order_from_load", { target_order: orderA.orderId });
+    expect(await snapshot("load_stops", "organisation_id")).toEqual(before);
+    const override = await b().from("warning_overrides").insert({
+      load_id: loadA.loadId,
+      warning_key: "X:load:1",
+      code: "CAPACITY_SPACE",
+      entity_type: "load",
+      entity_id: loadA.loadId,
+      kind: "dismiss",
+    });
+    expect(override.error).not.toBeNull();
   });
 });
