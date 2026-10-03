@@ -1,7 +1,7 @@
 "use client";
 
 import { useDroppable } from "@dnd-kit/core";
-import { Truck, User } from "lucide-react";
+import { PackageCheck, TriangleAlert, Truck, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { CapacityBar } from "@/components/ui/capacity-bar";
 import { WarningsBadge } from "@/components/ui/warning-item";
@@ -9,7 +9,12 @@ import { cn } from "@/lib/cn";
 import { formatGbp, formatKg, formatMiles } from "@/lib/format";
 import type { LoadMetrics } from "@/lib/planning/build";
 import { driverNames, loadTitle } from "@/lib/planning/labels";
-import { LOAD_STATUSES, type PlanData, type PlanLoad } from "@/lib/planning/types";
+import {
+  LOAD_STATUSES,
+  type PickProgress,
+  type PlanData,
+  type PlanLoad,
+} from "@/lib/planning/types";
 import type { DecidedWarning } from "@/lib/rules";
 import { optionFor } from "@/lib/orders/options";
 
@@ -92,6 +97,28 @@ export function WeightBar({
       nearLimit={nearLimit}
       size={size}
     />
+  );
+}
+
+/** Warehouse progress (spec 9.5), once picking has started. */
+export function PickingLine({ progress }: { progress: PickProgress | undefined }) {
+  if (!progress?.lines || (!progress.picked && !progress.loaded && !progress.shortages.length))
+    return null;
+  return (
+    <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-text-muted">
+      <PackageCheck className="size-3 shrink-0" aria-hidden />
+      <span className="num">
+        Picked {progress.picked}/{progress.lines} · Loaded {progress.loaded}/{progress.lines}
+      </span>
+      {progress.shortages.length ? (
+        <span className="flex items-center gap-1 font-medium text-warning-fg">
+          <TriangleAlert className="size-3 shrink-0" aria-hidden />
+          {progress.shortages.length === 1
+            ? "1 shortage"
+            : `${progress.shortages.length} shortages`}
+        </span>
+      ) : null}
+    </p>
   );
 }
 
@@ -185,6 +212,8 @@ export function LoadCard({
             <WeightBar metrics={metrics} preview={preview} nearLimit={near} />
           </div>
         ) : null}
+
+        <PickingLine progress={data.picking[load.id]} />
 
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
           <WarningsBadge counts={warningCounts(warnings)} />

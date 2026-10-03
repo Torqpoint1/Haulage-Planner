@@ -131,4 +131,13 @@ export type PlanData = {
   decisions: PlanDecision[];
   /** Road legs along each load's route (from the routing provider or its cache). */
   legs: Legs;
+  /** Warehouse progress per load (spec 9.5: visible to the planner on the load card). */
+  picking: Record<string, PickProgress>;
+};
+
+export type PickProgress = {
+  lines: number;
+  picked: number;
+  loaded: number;
+  shortages: { orderRef: string; note: string }[];
 };

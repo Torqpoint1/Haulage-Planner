@@ -705,3 +705,128 @@ describe("planning: loads, stops and order status (spec 6.8, 7.3)", () => {
     expect(changed ?? []).toEqual([]);
   });
 });
+
+describe("warehouse: pickers tick lines, others can't (spec 3, 9.5)", () => {
+  let settings: Awaited<ReturnType<typeof createSettings>>;
+  let customer: Awaited<ReturnType<typeof createCustomer>>;
+
+  beforeAll(async () => {
+    settings = await createSettings(org.admin.client, "picking");
+    customer = await createCustomer(org.admin.client, "picking");
+  });
+
+  async function plannedLine(ref: string) {
+    const { data: orderId } = await member(org, "planner").client.rpc("save_order", {
+      target_order_id: null,
+      order_data: {
+        customer_id: customer.customerId,
+        site_id: customer.siteId,
+        order_ref: ref,
+        required_date: "2026-10-12",
+      },
+      lines: [{ unit_type_id: settings.unitTypeId, quantity: 3, weight_per_unit_kg: 100 }],
+    });
+    const { data: load } = await member(org, "planner")
+      .client.from("loads")
+      .insert({ load_date: "2026-10-12", depot_id: settings.depotId })
+      .select("id")
+      .single();
+    await member(org, "planner").client.rpc("add_order_to_load", {
+      target_load: load!.id,
+      target_order: orderId,
+    });
+    const { data: line } = await service
+      .from("order_lines")
+      .select("id")
+      .eq("order_id", orderId)
+      .single();
+    return { orderId: orderId as string, loadId: load!.id as string, lineId: line!.id as string };
+  }
+  const pick = async (lineId: string) =>
+    (await service.from("pick_lines").select("*").eq("order_line_id", lineId).maybeSingle()).data;
+
+  it("a picker ticks picked and loaded, and who and when are recorded", async () => {
+    const { lineId } = await plannedLine("PK-1");
+    const picker = member(org, "warehouse");
+    expect(
+      (await picker.client.rpc("tick_line", { target_line: lineId, set_picked: true })).error,
+    ).toBeNull();
+    expect(
+      (await picker.client.rpc("tick_line", { target_line: lineId, set_loaded: true })).error,
+    ).toBeNull();
+    const row = await pick(lineId);
+    expect(row).toMatchObject({
+      picked: true,
+      loaded: true,
+      picked_by: picker.id,
+      loaded_by: picker.id,
+    });
+    expect(row?.picked_at).not.toBeNull();
+    await picker.client.rpc("tick_line", { target_line: lineId, set_picked: false });
+    expect(await pick(lineId)).toMatchObject({
+      picked: false,
+      picked_at: null,
+      picked_by: null,
+      loaded: true,
+    });
+  });
+
+  it("a shortage needs a note, and clearing it clears the note", async () => {
+    const { lineId } = await plannedLine("PK-2");
+    const picker = member(org, "warehouse").client;
+    const bare = await picker.rpc("tick_line", {
+      target_line: lineId,
+      set_shortage: true,
+      note: " ",
+    });
+    expect(bare.error).not.toBeNull();
+    await picker.rpc("tick_line", {
+      target_line: lineId,
+      set_shortage: true,
+      note: "1 frame short",
+    });
+    expect(await pick(lineId)).toMatchObject({ shortage: true, shortage_note: "1 frame short" });
+    await picker.rpc("tick_line", { target_line: lineId, set_shortage: false });
+    expect(await pick(lineId)).toMatchObject({ shortage: false, shortage_note: "" });
+  });
+
+  it("taking the order off the load clears its progress; loads that have left are locked", async () => {
+    const first = await plannedLine("PK-3");
+    await member(org, "warehouse").client.rpc("tick_line", {
+      target_line: first.lineId,
+      set_picked: true,
+    });
+    await member(org, "planner").client.rpc("remove_order_from_load", {
+      target_order: first.orderId,
+    });
+    expect(await pick(first.lineId)).toBeNull();
+    const off = await member(org, "warehouse").client.rpc("tick_line", {
+      target_line: first.lineId,
+      set_picked: true,
+    });
+    expect(off.error?.message).toMatch(/no longer on a load/);
+
+    const second = await plannedLine("PK-4");
+    await member(org, "planner")
+      .client.from("loads")
+      .update({ status: "out" })
+      .eq("id", second.loadId);
+    const late = await member(org, "warehouse").client.rpc("tick_line", {
+      target_line: second.lineId,
+      set_loaded: true,
+    });
+    expect(late.error?.message).toMatch(/already left/);
+  });
+
+  for (const role of ["office", "driver"] as const) {
+    it(`${role} can't tick lines`, async () => {
+      const { lineId } = await plannedLine(`PK-${role}`);
+      const { error } = await member(org, role).client.rpc("tick_line", {
+        target_line: lineId,
+        set_picked: true,
+      });
+      expect(error).not.toBeNull();
+      expect(await pick(lineId)).toBeNull();
+    });
+  }
+});

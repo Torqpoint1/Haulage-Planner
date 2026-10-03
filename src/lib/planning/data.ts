@@ -325,11 +325,33 @@ export async function loadPlanData(from: string, to: string): Promise<PlanData> 
       }),
   );
 
+  // Warehouse progress, for the load cards.
+  const { data: pickRows } = plannedIds.length
+    ? await supabase
+        .from("pick_lines")
+        .select("order_id, picked, loaded, shortage, shortage_note")
+        .in("order_id", plannedIds)
+    : { data: [] };
+  const picking: PlanData["picking"] = {};
+  for (const l of loads) {
+    const ids = new Set(l.stops.flatMap((s) => s.order_ids));
+    const rows = (pickRows ?? []).filter((p) => ids.has(p.order_id));
+    picking[l.id] = {
+      lines: [...ids].reduce((n, id) => n + (orders[id]?.lines.length ?? 0), 0),
+      picked: rows.filter((p) => p.picked).length,
+      loaded: rows.filter((p) => p.loaded).length,
+      shortages: rows
+        .filter((p) => p.shortage)
+        .map((p) => ({ orderRef: orders[p.order_id]?.order_ref ?? "", note: p.shortage_note })),
+    };
+  }
+
   return {
     from,
     to,
     loads,
     legs,
+    picking,
     orders,
     pool,
     sites,

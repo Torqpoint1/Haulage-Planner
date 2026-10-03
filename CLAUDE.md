@@ -9,28 +9,22 @@ Build in the stages of spec section 14, in order, and only start a stage once th
 
 ## Current stage
 
-**Stage 6: Map and suggestions. Complete; awaiting sign-off.** (Stages 0–5 signed off.)
+**Stage 7: Warehouse. Complete; awaiting sign-off.** (Stages 0–6 signed off.)
 
-- Done: road distances from OpenRouteService (HGV profile) behind `src/lib/services/routing.ts`,
-  cached per organisation in `route_legs`, falling back to straight line × 1.3 labelled as an
-  estimate. Map on the plan board: unplanned orders coloured by when they're needed, loads in
-  their own colours with route lines, pin ↔ order card selection. Suggested loads (8.1) as ghost
-  cards with summary, "Why this load?", Accept / Edit / Dismiss, and the orders it couldn't
-  place with reasons. Cheapest valid option (8.2) for every load and for any unplanned order
-  ("Compare options…"): own vehicles from miles × £/mile + hours × crew × £/hour, hauliers and
-  pallet networks from their current rate card with drops and surcharges; invalid options greyed
-  at the bottom with reasons; breakdown on tap. Fill the gaps (8.3) and a suggested drop order
-  (8.4) in the load panel. Nothing applies without a click.
-- Decisions (agreed with the user): MapTiler tiles (used whenever `NEXT_PUBLIC_MAP_TILE_KEY` is
-  set); ORS with fallback (`ORS_API_KEY`). Mine: pallet size comes from standard UK
-  pallet-network bands (fits 1200 × 1000 mm; quarter ≤ 800 mm/250 kg, half ≤ 1100 mm/500 kg, full
-  ≤ 2200 mm/1000 kg), units bigger than a pallet can't go by pallet network; part-load prices
-  apply up to half a 13.6 m trailer; own-vehicle cost counts every crew member's hours; the drop
-  order is nearest-neighbour then 2-opt (skipped when a stop has a fixed slot).
-- Deferred: asset collection suggestions (8.5) need assets (Stage 9); the remaining items listed
-  for earlier stages (customer Orders tab, other CSV imports).
+- Done: warehouse screen (`/warehouse?date=&load=`): day picker, the day's loads with picked and
+  loaded progress, and a pick sheet per load in load order (last drop first) showing order ref,
+  customer, PO, quantities, handling notes and load securing notes from the unit settings.
+  Large Picked / Loaded / Shortage buttons; a shortage needs a note. Progress and shortages show
+  to the planner on the load card and in the load panel. A4 print layouts (spec 10.8) for the pick
+  sheet, driver run sheet and delivery notes: black and white, organisation logo, page numbers,
+  no app chrome; printed from the warehouse or the plan panel.
+- Decisions (mine): "delivery note summary" is one signed delivery note per drop (a page each);
+  ticks are kept per order line while the order is on a load and cleared if it comes off; loads
+  that are out or complete can't be ticked; office staff can print but not open the warehouse.
+- Deferred: asset collection suggestions (8.5) and returnable assets (Stage 9); customer page
+  Orders tab; other CSV imports.
 - Not yet: emailed invitations and password reset (need Resend); GDPR export/deletion.
-- Next: **Stage 7: Warehouse**.
+- Next: **Stage 8: Drivers**.
 - Open: no hosted Supabase project yet. postcodes.io and OpenRouteService are blocked by this
   cloud environment's network policy; browser tests use `e2e/support/mock-postcodes.mjs`
   (`POSTCODES_API_URL=http://localhost:3199`) and `e2e/support/mock-ors.mjs`
@@ -150,6 +144,15 @@ In the Claude Code cloud environment, Chromium is preinstalled and `@playwright/
   (`nearestNeighbour`, `untangle`, `suggestStopOrder`); `server.ts` runs them with road
   distances. The plan board's `proposal-card.tsx`, `load-advice.tsx`, `options-list.tsx` and
   `compare-modal.tsx` show them.
+- `src/lib/warehouse/`: `pick-sheet.ts` (pure `pickSheet`: stops reversed into load order,
+  `handlingNotes`, totals; tested), `data.ts` (`loadSheets(date, loadId?)`: everything the
+  warehouse screen and print layouts need, including ETAs and site contacts).
+- Warehouse DB: `pick_lines` (one row per order line on a load: picked/loaded with who and when,
+  shortage + note; cascades away when the order leaves the load). `tick_line(...)` is the only
+  write path (SECURITY INVOKER; warehouse, planner, admin). `PlanData.picking` feeds the cards.
+- `src/app/print/`: print layouts outside the app shell (`print.css`, plain black on white, not
+  themed tokens). `loads/[id]/[sheet]` with sheet = pick | run | delivery; `PrintShell` adds the
+  header, the screen-only toolbar and an `@page` rule (A4, page numbers in the margin).
 - `src/lib/branding.ts`: logo storage paths and signed URLs; `(app)/layout.tsx` injects the
   organisation's accent colour.
 

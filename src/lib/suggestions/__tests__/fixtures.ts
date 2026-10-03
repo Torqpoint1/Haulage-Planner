@@ -178,6 +178,7 @@ export function planData(over: Partial<PlanData> = {}): PlanData {
     staleDays: 180,
     decisions: [],
     legs: {},
+    picking: {},
     ...over,
   };
 }

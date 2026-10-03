@@ -233,6 +233,17 @@ export async function createLoad(
     kind: "override",
     reason: "Production will finish first thing.",
   });
+  const { data: line } = await client
+    .from("order_lines")
+    .select("id")
+    .eq("order_id", order.orderId)
+    .limit(1)
+    .single();
+  const { error: tickError } = await client.rpc("tick_line", {
+    target_line: line!.id,
+    set_picked: true,
+  });
+  if (tickError) throw new Error(`tick_line: ${tickError.message}`);
   const { error: legError } = await client
     .from("route_legs")
     .upsert(
@@ -251,4 +262,5 @@ export const PLANNING_TABLES: { table: string; patch: Record<string, unknown> }[
   { table: "warning_overrides", patch: { reason: "Hijacked" } },
   { table: "compliance_zones", patch: { name: "Hijacked zone" } },
   { table: "route_legs", patch: { miles: 0 } },
+  { table: "pick_lines", patch: { picked: false } },
 ];

@@ -17,6 +17,7 @@ import {
   ChevronRight,
   GripVertical,
   Pencil,
+  Printer,
   Trash2,
   X,
 } from "lucide-react";
@@ -58,7 +59,7 @@ import {
   setLoadStatus,
 } from "./actions";
 import { LoadAdvicePanel } from "./load-advice";
-import { SpaceBar, WeightBar, type LoadView } from "./load-card";
+import { PickingLine, SpaceBar, WeightBar, type LoadView } from "./load-card";
 
 /** The next step for each status, and the way back where there is one. */
 const NEXT: Partial<Record<LoadStatus, { to: LoadStatus; label: string }>> = {
@@ -563,6 +564,37 @@ export function LoadPanel({
                   : "Estimate from straight-line distances × 1.3; road routing isn't available right now."}
               </span>
             </p>
+          ) : null}
+          <PickingLine progress={data.picking[load.id]} />
+          {load.stops.length ? (
+            <nav aria-label="Print" className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+              <Printer className="size-icon-sm text-text-muted" aria-hidden />
+              {(
+                [
+                  ["pick", "Pick sheet"],
+                  ["run", "Run sheet"],
+                  ["delivery", "Delivery notes"],
+                ] as const
+              ).map(([sheet, label]) => (
+                <Link
+                  key={sheet}
+                  href={`/print/loads/${load.id}/${sheet}`}
+                  target="_blank"
+                  className="font-medium text-accent-text hover:underline"
+                >
+                  {label}
+                </Link>
+              ))}
+            </nav>
+          ) : null}
+          {data.picking[load.id]?.shortages.length ? (
+            <ul className="flex flex-col gap-1" aria-label="Shortages">
+              {data.picking[load.id].shortages.map((sh, i) => (
+                <li key={i} className="text-sm break-words text-warning-fg">
+                  <span className="font-medium">{sh.orderRef}:</span> {sh.note}
+                </li>
+              ))}
+            </ul>
           ) : null}
           {load.notes ? (
             <p className="text-sm break-words whitespace-pre-line">{load.notes}</p>

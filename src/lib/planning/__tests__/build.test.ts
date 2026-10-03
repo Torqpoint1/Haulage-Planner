@@ -81,6 +81,7 @@ const data: PlanData = {
   staleDays: 180,
   decisions: [],
   legs: {},
+  picking: {},
 };
 const clock = { now: new Date("2026-10-01T08:00:00Z"), today: "2026-10-01" };
 

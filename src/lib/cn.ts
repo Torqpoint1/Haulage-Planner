@@ -26,6 +26,7 @@ const twMerge = extendTailwindMerge({
         "content",
         "board",
         "day",
+        "tick-actions",
       ],
     },
     classGroups: {

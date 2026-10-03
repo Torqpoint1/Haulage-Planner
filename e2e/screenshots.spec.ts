@@ -280,6 +280,30 @@ for (const theme of THEMES) {
         await page.screenshot({ path: `screenshots/${theme}/${width}/state-compare-options.png` });
       });
 
+      test("warehouse screens", async ({ page }) => {
+        test.setTimeout(90_000);
+        const { d1 } = planningDays();
+        await page.goto(`/warehouse?date=${d1}`);
+        await page
+          .getByRole("navigation", { name: "Loads" })
+          .getByRole("button")
+          .filter({ hasText: "Luton 1" })
+          .click();
+        await expect(page.getByRole("region", { name: "Pick sheet for Luton 1" })).toBeVisible();
+        await settle(page);
+        await expectNoOverflow(page);
+        await page.screenshot({
+          path: `screenshots/${theme}/${width}/warehouse-pick-sheet.png`,
+          fullPage: true,
+        });
+        await page
+          .getByRole("button", { name: /^Flag shortage: / })
+          .first()
+          .click();
+        await expect(page.getByRole("dialog", { name: "Flag a shortage" })).toBeVisible();
+        await page.screenshot({ path: `screenshots/${theme}/${width}/state-shortage.png` });
+      });
+
       test("users and roles", async ({ page }) => {
         await page.goto("/settings/users");
         await expect(page.getByRole("heading", { level: 1, name: "Users & roles" })).toBeVisible();

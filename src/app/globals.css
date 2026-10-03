@@ -46,6 +46,8 @@
   --spacing-board: calc(100vh - 32px);
   /* The narrowest a day column gets before the days row scrolls. */
   --spacing-day: 192px;
+  /* Warehouse: the Picked / Loaded / Shortage buttons beside a line. */
+  --spacing-tick-actions: 352px;
 
   /* ---- Typography (10.1): 12/14/16/20/24/32, weights 400/500/600 ---- */
   --font-*: initial;

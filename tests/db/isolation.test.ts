@@ -560,3 +560,32 @@ describe("loads can't be linked across organisations", () => {
     expect(override.error).not.toBeNull();
   });
 });
+
+describe("pick sheets can't be ticked across organisations", () => {
+  it("B can't tick A's lines, through the function or directly", async () => {
+    const before = await snapshot("pick_lines", "organisation_id");
+    const { data: lines } = await service
+      .from("order_lines")
+      .select("id")
+      .eq("order_id", orderA.orderId);
+    for (const l of lines ?? []) {
+      const { error } = await orgB.admin.client.rpc("tick_line", {
+        target_line: l.id,
+        set_loaded: true,
+      });
+      expect(error).not.toBeNull();
+    }
+    const { data: stopOrderB } = await service
+      .from("stop_orders")
+      .select("id")
+      .eq("order_id", orderB.orderId)
+      .single();
+    const insert = await orgB.admin.client.from("pick_lines").insert({
+      stop_order_id: stopOrderB!.id,
+      order_id: orderA.orderId,
+      order_line_id: lines![0].id,
+    });
+    expect(insert.error).not.toBeNull();
+    expect(await snapshot("pick_lines", "organisation_id")).toEqual(before);
+  });
+});
