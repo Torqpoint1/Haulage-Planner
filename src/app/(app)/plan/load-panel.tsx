@@ -57,6 +57,7 @@ import {
   saveStop,
   setLoadStatus,
 } from "./actions";
+import { LoadAdvicePanel } from "./load-advice";
 import { SpaceBar, WeightBar, type LoadView } from "./load-card";
 
 /** The next step for each status, and the way back where there is one. */
@@ -557,7 +558,9 @@ export function LoadPanel({
                 : ""}
               {metrics.costEstimate != null ? ` · ${formatGbp(metrics.costEstimate)}` : ""}
               <span className="block text-xs">
-                Estimate from straight-line distances; road routes arrive later.
+                {metrics.run.roadDistances
+                  ? "Road distances and HGV driving times; cost is an estimate from your running costs."
+                  : "Estimate from straight-line distances × 1.3; road routing isn't available right now."}
               </span>
             </p>
           ) : null}
@@ -688,6 +691,8 @@ export function LoadPanel({
           </p>
         )}
       </PanelSection>
+
+      {canEdit ? <LoadAdvicePanel view={view} data={data} locked={locked} /> : null}
 
       <Modal
         open={confirmDelete}

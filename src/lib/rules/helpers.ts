@@ -53,10 +53,14 @@ export function availableVehicles(ctx: RuleContext): RuleVehicle[] {
  * would no longer fire. The check is simply re-run on the swapped context.
  */
 export function switchVehicleFixes(ctx: RuleContext, check: Check, code: string): WarningFix[] {
-  if (!ctx.load.vehicle) return [];
+  // A re-run only asks "does this vehicle pass?"; working out its fixes would recurse forever.
+  if (!ctx.load.vehicle || ctx.skipFixes) return [];
   return availableVehicles(ctx)
     .filter(
-      (v) => !check({ ...ctx, load: { ...ctx.load, vehicle: v } }).some((w) => w.code === code),
+      (v) =>
+        !check({ ...ctx, skipFixes: true, load: { ...ctx.load, vehicle: v } }).some(
+          (w) => w.code === code,
+        ),
     )
     .slice(0, 2)
     .map((v) => ({

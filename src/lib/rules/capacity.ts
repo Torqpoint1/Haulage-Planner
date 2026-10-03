@@ -17,14 +17,16 @@ export type SpaceUse = {
 
 export type LineWithUnit = RuleLine & { unit: RuleUnitType | undefined };
 
-function fitsDeck(u: RuleUnitType, v: RuleVehicle) {
+type Deck = Pick<RuleVehicle, "deck_length_mm" | "deck_width_mm" | "deck_height_mm" | "capacities">;
+
+function fitsDeck(u: RuleUnitType, v: Deck) {
   const flat =
     (u.length_mm <= v.deck_length_mm && u.width_mm <= v.deck_width_mm) ||
     (u.length_mm <= v.deck_width_mm && u.width_mm <= v.deck_length_mm);
   return flat && u.height_mm <= v.deck_height_mm;
 }
 
-export function spaceUse(lines: LineWithUnit[], vehicle: RuleVehicle): SpaceUse {
+export function spaceUse(lines: LineWithUnit[], vehicle: Deck): SpaceUse {
   let share = 0;
   const tooBig = new Map<string, RuleUnitType>();
   const deckArea = vehicle.deck_length_mm * vehicle.deck_width_mm;

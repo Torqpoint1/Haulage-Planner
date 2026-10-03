@@ -228,6 +228,56 @@ for (const theme of THEMES) {
           .click();
         await expect(page.getByRole("dialog", { name: "New load" })).toBeVisible();
         await page.screenshot({ path: `screenshots/${theme}/${width}/state-new-load.png` });
+        await page.keyboard.press("Escape");
+      });
+
+      test("suggestion screens", async ({ page }) => {
+        test.setTimeout(120_000);
+        const { d0 } = planningDays();
+        const shot = async (name: string) => {
+          await settle(page);
+          await expectNoOverflow(page);
+          await page.screenshot({
+            path: `screenshots/${theme}/${width}/${name}.png`,
+            fullPage: true,
+          });
+        };
+        await page.goto(`/plan?week=${d0}`);
+        await page.getByRole("button", { name: "Suggest loads" }).click();
+        await expect(page.getByText(/Nothing changes until you accept one\./)).toBeVisible({
+          timeout: 15_000,
+        });
+        const ghost = page.getByRole("article", { name: /^Suggested load on / }).first();
+        if (await ghost.isVisible())
+          await ghost.getByRole("button", { name: "Why this load?" }).click();
+        await shot("plan-suggestions");
+
+        await page.getByRole("button", { name: "Show map" }).click();
+        await expect(page.getByRole("region", { name: "Orders and loads" })).toBeVisible();
+        await shot("plan-map");
+
+        const card = page.getByRole("article", { name: "18t curtainsider load" }).first();
+        const panel = page.getByRole("dialog", { name: "18t curtainsider" });
+        await expect(async () => {
+          await card.getByRole("button").first().click();
+          await expect(panel).toBeVisible({ timeout: 2_000 });
+        }).toPass();
+        const options = panel.getByRole("list", { name: "Delivery options" });
+        await expect(options).toBeVisible({ timeout: 15_000 });
+        await options.getByRole("button").first().click();
+        await options.scrollIntoViewIfNeeded();
+        await settle(page);
+        await page.screenshot({ path: `screenshots/${theme}/${width}/state-load-options.png` });
+        await page.keyboard.press("Escape");
+
+        await page.getByRole("button", { name: /^Add SO-24104 to a load$/ }).click();
+        await page.getByRole("menuitem", { name: "Compare options…" }).click();
+        const modal = page.getByRole("dialog", { name: "Options for SO-24104" });
+        await expect(modal.getByRole("list", { name: "Options for SO-24104" })).toBeVisible({
+          timeout: 15_000,
+        });
+        await settle(page);
+        await page.screenshot({ path: `screenshots/${theme}/${width}/state-compare-options.png` });
       });
 
       test("users and roles", async ({ page }) => {

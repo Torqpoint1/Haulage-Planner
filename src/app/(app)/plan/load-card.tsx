@@ -190,11 +190,12 @@ export function LoadCard({
           <WarningsBadge counts={warningCounts(warnings)} />
           {stops.length && run.miles != null ? (
             <span className="num text-xs text-text-muted">
+              {/* Miles are only an estimate without road routing; cost is always an estimate. */}
               {formatMiles(run.miles)}
+              {run.roadDistances ? "" : " est."}
               {metrics.costEstimate != null
-                ? ` · ${formatGbp(metrics.costEstimate, { whole: true })}`
-                : ""}{" "}
-              est.
+                ? ` · ${formatGbp(metrics.costEstimate, { whole: true })} est.`
+                : ""}
             </span>
           ) : null}
         </div>

@@ -125,6 +125,18 @@ describe("NO_UNLOAD_METHOD", () => {
     expect(w.detail).toContain("SO-P: Euro pallet");
   });
 
+  it("offers no switch when every vehicle fails too, without looping", () => {
+    // Regression: re-running the check per vehicle used to recurse forever here.
+    const ctx = at({ site_equipment: [], name: "Farm" }, [order()], curtain);
+    ctx.vehicles = [
+      curtain,
+      vehicle({ id: "c2", name: "Curtainsider 2", unload_methods: ["side"] }),
+      vehicle({ id: "c3", name: "Curtainsider 3", unload_methods: ["rear"] }),
+    ];
+    const [w] = noUnloadMethod(ctx);
+    expect(w.fixes).toEqual([]);
+  });
+
   it("respects crane-only units", () => {
     const craneUnits = {
       ...context().unitTypes,

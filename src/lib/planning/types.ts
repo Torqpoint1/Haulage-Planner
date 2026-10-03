@@ -1,5 +1,6 @@
 import type { Decision } from "@/lib/rules";
 import type { RuleOrder, RuleSite, RuleUnitType, RuleVehicle, RuleZone } from "@/lib/rules/context";
+import type { Legs } from "@/lib/routing/legs";
 import type { Thresholds } from "@/lib/settings/thresholds";
 
 /** What the plan board loads for a range of days (spec 9.2). Plain data, safe to pass to the browser. */
@@ -37,6 +38,37 @@ export type PlanVehicle = RuleVehicle & {
   cost_per_mile: number;
   cost_per_driver_hour: number;
   crew_size_default: number;
+};
+
+export type PalletSize = "quarter" | "half" | "full";
+
+export type PlanRateCard = {
+  id: string;
+  name: string;
+  valid_from: string;
+  valid_to: string | null;
+  per_drop: number;
+  extra_drop: number;
+  surcharge_tail_lift_per_pallet: number;
+  surcharge_timed: number;
+  surcharge_remote_area: number;
+  remote_postcodes: string[];
+  surcharge_two_person: number;
+  waiting_per_hour: number;
+  waiting_free_minutes: number;
+  /** zone id → price per pallet size. */
+  pallet: Record<string, Partial<Record<PalletSize, number>>>;
+  /** zone id → full or part load price. */
+  load: Record<string, Partial<Record<"full" | "part", number>>>;
+};
+
+export type PlanHaulier = {
+  id: string;
+  name: string;
+  haulier_type: string;
+  coverage_areas: string[];
+  services: string[];
+  rateCards: PlanRateCard[];
 };
 
 export type PlanStop = {
@@ -82,7 +114,7 @@ export type PlanData = {
   pool: string[];
   sites: Record<string, PlanSite>;
   vehicles: PlanVehicle[];
-  hauliers: { id: string; name: string; haulier_type: string }[];
+  hauliers: PlanHaulier[];
   drivers: { id: string; name: string; available_days: string[] }[];
   depots: {
     id: string;
@@ -97,4 +129,6 @@ export type PlanData = {
   thresholds: Thresholds;
   staleDays: number;
   decisions: PlanDecision[];
+  /** Road legs along each load's route (from the routing provider or its cache). */
+  legs: Legs;
 };

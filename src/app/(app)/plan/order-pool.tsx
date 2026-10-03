@@ -3,7 +3,7 @@
 import { useDraggable } from "@dnd-kit/core";
 import { ClipboardList, GripVertical, Plus, Search, SearchX } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ReadinessBadge, UrgencyBadge } from "@/components/orders/badges";
 import { Button } from "@/components/ui/button";
 import {
@@ -46,6 +46,9 @@ function OrderCard({
   canEdit,
   onAdd,
   onNewLoad,
+  onCompare,
+  onShowOnMap,
+  selected,
   dragging,
 }: {
   order: PlanOrder;
@@ -53,8 +56,16 @@ function OrderCard({
   canEdit: boolean;
   onAdd: (loadId: string) => void;
   onNewLoad: () => void;
+  onCompare: () => void;
+  /** Only while the map is open. */
+  onShowOnMap?: () => void;
+  selected: boolean;
   dragging: boolean;
 }) {
+  const ref = useRef<HTMLLIElement | null>(null);
+  useEffect(() => {
+    if (selected) ref.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [selected]);
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `order:${order.id}`,
     disabled: !canEdit,
@@ -64,9 +75,13 @@ function OrderCard({
 
   return (
     <li
-      ref={setNodeRef}
+      ref={(el) => {
+        setNodeRef(el);
+        ref.current = el;
+      }}
       className={cn(
-        "flex min-w-0 items-start gap-2 rounded-md border border-border bg-surface p-3",
+        "flex min-w-0 items-start gap-2 rounded-md border bg-surface p-3",
+        selected ? "border-accent ring-2 ring-accent" : "border-border",
         (isDragging || dragging) && "opacity-50",
       )}
     >
@@ -124,6 +139,11 @@ function OrderCard({
             ))}
             {loads.length ? <DropdownMenuSeparator /> : null}
             <DropdownMenuItem onSelect={onNewLoad}>New load…</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={onCompare}>Compare options…</DropdownMenuItem>
+            {onShowOnMap ? (
+              <DropdownMenuItem onSelect={onShowOnMap}>Show on map</DropdownMenuItem>
+            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
       ) : null}
@@ -137,16 +157,24 @@ export function OrderPool({
   weekEnd,
   canEdit,
   activeOrderId,
+  selectedOrderId,
+  mapOpen,
   onAdd,
   onNewLoad,
+  onCompare,
+  onSelect,
 }: {
   data: PlanData;
   today: string;
   weekEnd: string;
   canEdit: boolean;
   activeOrderId: string | null;
+  selectedOrderId: string | null;
+  mapOpen: boolean;
   onAdd: (orderId: string, loadId: string) => void;
   onNewLoad: (orderId: string) => void;
+  onCompare: (orderId: string) => void;
+  onSelect: (orderId: string) => void;
 }) {
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const set = (patch: Partial<Filters>) => setFilters((f) => ({ ...f, ...patch }));
@@ -266,6 +294,9 @@ export function OrderPool({
               dragging={activeOrderId === o.id}
               onAdd={(loadId) => onAdd(o.id, loadId)}
               onNewLoad={() => onNewLoad(o.id)}
+              onCompare={() => onCompare(o.id)}
+              onShowOnMap={mapOpen ? () => onSelect(o.id) : undefined}
+              selected={selectedOrderId === o.id}
             />
           ))}
         </ul>

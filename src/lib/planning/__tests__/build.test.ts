@@ -80,6 +80,7 @@ const data: PlanData = {
   thresholds: { ...DEFAULT_THRESHOLDS },
   staleDays: 180,
   decisions: [],
+  legs: {},
 };
 const clock = { now: new Date("2026-10-01T08:00:00Z"), today: "2026-10-01" };
 

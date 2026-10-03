@@ -33,6 +33,12 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
     },
     {
+      // Stand-in for OpenRouteService (see e2e/support/mock-ors.mjs).
+      command: "node e2e/support/mock-ors.mjs",
+      url: "http://localhost:3198/health",
+      reuseExistingServer: !process.env.CI,
+    },
+    {
       // Production build against the local Supabase (`npx supabase start`). The gallery
       // is enabled explicitly because it is dev-only otherwise.
       command: `npm run build && npx next start -p ${PORT}`,
@@ -46,6 +52,7 @@ export default defineConfig({
         NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: supabase.publishableKey,
         NEXT_PUBLIC_SITE_URL: `http://localhost:${PORT}`,
         POSTCODES_API_URL: "http://localhost:3199",
+        ORS_API_URL: "http://localhost:3198",
       },
     },
   ],

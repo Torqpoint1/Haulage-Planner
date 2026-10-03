@@ -1,8 +1,18 @@
 import "server-only";
+import { routeLegs } from "@/lib/routing/server";
 import { createClient } from "@/lib/supabase/server";
 import type { RuleUnitType, RuleZone } from "@/lib/rules/context";
 import { resolveThresholds } from "@/lib/settings/thresholds";
-import type { PlanData, PlanLoad, PlanOrder, PlanSite, PlanVehicle } from "./types";
+import type {
+  PalletSize,
+  PlanData,
+  PlanHaulier,
+  PlanLoad,
+  PlanOrder,
+  PlanRateCard,
+  PlanSite,
+  PlanVehicle,
+} from "./types";
 
 const ORDER_COLUMNS =
   "id, order_ref, customer_id, site_id, required_date, earliest_date, latest_date, urgency, readiness, missing_items, expected_ready_date, status, customer:customers(name), lines:order_lines(unit_type_id, quantity, weight_per_unit_kg, description, position)";
@@ -58,6 +68,45 @@ const toOrder = (o: OrderRow): PlanOrder => ({
     })),
 });
 
+type CardRow = Record<string, unknown> & {
+  pallet: { zone_id: string; pallet_size: PalletSize; price: number }[];
+  load: { zone_id: string; load_type: "full" | "part"; price: number }[];
+};
+
+function toHaulier(h: Record<string, unknown>): PlanHaulier {
+  return {
+    id: h.id as string,
+    name: h.name as string,
+    haulier_type: h.haulier_type as string,
+    coverage_areas: (h.coverage_areas ?? []) as string[],
+    services: (h.services ?? []) as string[],
+    rateCards: ((h.rate_cards ?? []) as CardRow[]).map((c) => {
+      const pallet: PlanRateCard["pallet"] = {};
+      for (const p of c.pallet) (pallet[p.zone_id] ??= {})[p.pallet_size] = Number(p.price);
+      const load: PlanRateCard["load"] = {};
+      for (const l of c.load) (load[l.zone_id] ??= {})[l.load_type] = Number(l.price);
+      const n = (k: string) => Number(c[k] ?? 0);
+      return {
+        id: c.id as string,
+        name: c.name as string,
+        valid_from: c.valid_from as string,
+        valid_to: c.valid_to as string | null,
+        per_drop: n("per_drop"),
+        extra_drop: n("extra_drop"),
+        surcharge_tail_lift_per_pallet: n("surcharge_tail_lift_per_pallet"),
+        surcharge_timed: n("surcharge_timed"),
+        surcharge_remote_area: n("surcharge_remote_area"),
+        remote_postcodes: (c.remote_postcodes ?? []) as string[],
+        surcharge_two_person: n("surcharge_two_person"),
+        waiting_per_hour: n("waiting_per_hour"),
+        waiting_free_minutes: n("waiting_free_minutes"),
+        pallet,
+        load,
+      };
+    }),
+  };
+}
+
 /** Everything the plan board needs for the days from `from` to `to` (inclusive). */
 export async function loadPlanData(from: string, to: string): Promise<PlanData> {
   const supabase = await createClient();
@@ -92,7 +141,13 @@ export async function loadPlanData(from: string, to: string): Promise<PlanData> 
       .from("vehicles")
       .select("*, capacities:vehicle_capacities(unit_type_id, max_units)")
       .order("name"),
-    supabase.from("hauliers").select("id, name, haulier_type").eq("active", true).order("name"),
+    supabase
+      .from("hauliers")
+      .select(
+        "id, name, haulier_type, coverage_areas, services, rate_cards(*, pallet:rate_card_pallet_prices(zone_id, pallet_size, price), load:rate_card_load_prices(zone_id, load_type, price))",
+      )
+      .eq("active", true)
+      .order("name"),
     supabase.from("drivers").select("id, name, available_days").eq("active", true).order("name"),
     supabase.from("depots").select("id, name, latitude, longitude, is_default").order("name"),
     supabase.from("unit_types").select("*"),
@@ -254,15 +309,32 @@ export async function loadPlanData(from: string, to: string): Promise<PlanData> 
     : { data: [] };
   const nameOf = Object.fromEntries((profiles ?? []).map((p) => [p.id, p.full_name || p.email]));
 
+  // Each load's route: depot, stops in order, back to the depot.
+  const depots = (depotsRes.data ?? []).map((d) => ({
+    ...d,
+    latitude: num(d.latitude),
+    longitude: num(d.longitude),
+  }));
+  const legs = await routeLegs(
+    loads
+      .filter((l) => l.stops.length)
+      .map((l) => {
+        const depot = depots.find((d) => d.id === l.depot_id);
+        const points = l.stops.map((s) => sites[s.site_id]).filter(Boolean);
+        return depot ? [depot, ...points, depot] : [];
+      }),
+  );
+
   return {
     from,
     to,
     loads,
+    legs,
     orders,
     pool,
     sites,
     vehicles,
-    hauliers: hauliersRes.data ?? [],
+    hauliers: ((hauliersRes.data ?? []) as Record<string, unknown>[]).map(toHaulier),
     drivers: driversRes.data ?? [],
     depots: (depotsRes.data ?? []).map((d) => ({
       ...d,

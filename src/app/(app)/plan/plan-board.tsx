@@ -25,10 +25,11 @@ import {
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
-import { MapPanel } from "@/components/map/map-panel";
-import type { MapPin } from "@/components/map/types";
+import { MapLegend, MapPanel } from "@/components/map/map-panel";
+import { loadColour, type MapPin, type MapRoute } from "@/components/map/types";
 import { PageContainer, PageHeader } from "@/components/shell/page";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { toast } from "@/components/ui/toast";
 import { SegmentedControl, Toggle } from "@/components/ui/toggle";
 import { cn } from "@/lib/cn";
@@ -36,13 +37,17 @@ import { formatLocalDate, formatLocalDayShort, fromIsoDate } from "@/lib/format"
 import { buildContext, loadMetrics, loadWarnings } from "@/lib/planning/build";
 import { unitsText } from "@/lib/planning/labels";
 import type { PlanData } from "@/lib/planning/types";
+import { legBetween, legKey } from "@/lib/routing/legs";
+import type { LoadProposal, Unplaced } from "@/lib/suggestions/suggest-loads";
 import type { WarningFix } from "@/lib/rules/types";
 import type { FormState } from "@/lib/settings/result";
-import { addOrderToLoad, removeOrderFromLoad, updateLoad } from "./actions";
+import { addOrderToLoad, removeOrderFromLoad, suggestLoadsAction, updateLoad } from "./actions";
+import { CompareModal } from "./compare-modal";
 import { LoadCard, type LoadView } from "./load-card";
 import { LoadFormModal } from "./load-form";
 import { LoadPanel, type StopFocus } from "./load-panel";
 import { OrderPool } from "./order-pool";
+import { ProposalCard } from "./proposal-card";
 
 const iso = (d: Date) => format(d, "yyyy-MM-dd");
 
@@ -91,6 +96,16 @@ export function PlanBoard({
     orderId?: string;
   } | null>(null);
   const [focus, setFocus] = useState<StopFocus>(null);
+  const [suggesting, startSuggest] = useTransition();
+  // Suggestions belong to the week they were made for.
+  const [suggestions, setSuggestions] = useState<{
+    from: string;
+    proposals: LoadProposal[];
+    unplaced: Unplaced[];
+  } | null>(null);
+  const [showUnplaced, setShowUnplaced] = useState(false);
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [compare, setCompare] = useState<string | null>(null);
 
   const monday = fromIsoDate(data.from);
   const allDays = Array.from({ length: 7 }, (_, i) => iso(addDays(monday, i)));
@@ -157,6 +172,29 @@ export function PlanBoard({
     if (id.startsWith("load:")) addToLoad(orderId, id.slice(5));
   }
 
+  const live = suggestions?.from === data.from ? suggestions : null;
+  const dropProposal = (key: string) =>
+    setSuggestions((s) => (s ? { ...s, proposals: s.proposals.filter((p) => p.key !== key) } : s));
+
+  function suggest() {
+    startSuggest(async () => {
+      const r = await suggestLoadsAction(data.from, data.to, shownDays);
+      if (!r.ok) return void toast.error(r.error);
+      setSuggestions({ from: data.from, proposals: r.proposals, unplaced: r.unplaced });
+      setShowUnplaced(false);
+      if (r.proposals.length) {
+        toast.success(
+          `${r.proposals.length} suggested ${r.proposals.length === 1 ? "load" : "loads"}: check them on the board`,
+        );
+      } else
+        toast.info(
+          r.unplaced.length
+            ? "No loads to suggest; see why above the board."
+            : "No unplanned orders to suggest loads for.",
+        );
+    });
+  }
+
   function applyFix(fix: WarningFix, v: LoadView) {
     const p = fix.params ?? {};
     const done = (message: string) => (r: { ok: boolean; error?: string }) => {
@@ -202,37 +240,65 @@ export function PlanBoard({
 
   const selected = selectedLoadId ? (views[selectedLoadId] ?? null) : null;
 
-  const pins: MapPin[] = useMemo(() => {
-    const out: MapPin[] = [];
+  // Map (9.2): unplanned orders coloured by when they're needed; loads in their own colours with routes.
+  const { pins, routes } = useMemo(() => {
+    const pins: MapPin[] = [];
+    const routes: MapRoute[] = [];
     for (const id of data.pool) {
       const o = data.orders[id];
       const s = o && data.sites[o.site_id];
-      if (s?.latitude != null && s.longitude != null) {
-        out.push({
-          id: `order-${o.id}`,
-          lat: s.latitude,
-          lng: s.longitude,
-          label: `${o.order_ref}, ${s.name}`,
-          colour: o.required_date < today ? "load-6" : "load-1",
-        });
-      }
+      if (s?.latitude == null || s.longitude == null) continue;
+      pins.push({
+        id: `order:${o.id}`,
+        lat: s.latitude,
+        lng: s.longitude,
+        label: `${o.order_ref}, ${s.name}, needed ${formatLocalDate(fromIsoDate(o.required_date))}`,
+        colour:
+          o.required_date < today ? "load-6" : o.required_date <= weekEnd ? "load-3" : "neutral",
+      });
     }
     data.loads.forEach((l, i) => {
-      for (const st of l.stops) {
+      const colour = loadColour(i + 1);
+      const depot = data.depots.find((d) => d.id === l.depot_id);
+      const stops = l.stops
+        .map((st) => data.sites[st.site_id])
+        .filter((s) => s?.latitude != null && s.longitude != null);
+      l.stops.forEach((st) => {
         const s = data.sites[st.site_id];
-        if (s?.latitude != null && s.longitude != null) {
-          out.push({
-            id: `stop-${st.id}`,
-            lat: s.latitude,
-            lng: s.longitude,
-            label: `Stop ${st.sequence}: ${s.name}`,
-            colour: (["load-2", "load-3", "load-4", "load-5"] as const)[i % 4],
-          });
+        if (s?.latitude == null || s.longitude == null) return;
+        pins.push({
+          id: `load:${l.id}:${st.id}`,
+          lat: s.latitude,
+          lng: s.longitude,
+          label: `Stop ${st.sequence}: ${s.name}`,
+          colour,
+        });
+      });
+      if (!depot || depot.latitude == null || !stops.length) return;
+      const points = [depot, ...stops, depot];
+      const line: [number, number][] = [];
+      for (let k = 1; k < points.length; k++) {
+        const key = legKey(points[k - 1], points[k]);
+        const shape = key ? data.legs[key]?.geometry : null;
+        if (shape?.length) line.push(...shape);
+        else if (legBetween(data.legs, points[k - 1], points[k])) {
+          line.push(
+            [points[k - 1].latitude!, points[k - 1].longitude!],
+            [points[k].latitude!, points[k].longitude!],
+          );
         }
       }
+      routes.push({ id: `route:${l.id}`, colour, points: line });
     });
-    return out;
-  }, [data, today]);
+    return { pins, routes };
+  }, [data, today, weekEnd]);
+
+  function selectPin(id: string) {
+    if (id.startsWith("order:")) {
+      setSelectedOrderId(id.slice(6));
+      setShowPool(true);
+    } else if (id.startsWith("load:")) navigate({ load: id.split(":")[1] });
+  }
 
   const activeOrder = activeOrderId ? data.orders[activeOrderId] : null;
 
@@ -263,10 +329,12 @@ export function PlanBoard({
               <MapIcon aria-hidden />
               {showMap ? "Hide map" : "Show map"}
             </Button>
-            <Button variant="secondary" disabled title="Load suggestions arrive in the next stage">
-              <Sparkles aria-hidden />
-              Suggest loads
-            </Button>
+            {canEdit ? (
+              <Button variant="primary" loading={suggesting} onClick={suggest}>
+                <Sparkles aria-hidden />
+                Suggest loads
+              </Button>
+            ) : null}
           </>
         }
       />
@@ -352,12 +420,56 @@ export function PlanBoard({
               weekEnd={weekEnd}
               canEdit={canEdit}
               activeOrderId={activeOrderId}
+              selectedOrderId={selectedOrderId}
+              mapOpen={showMap}
               onAdd={addToLoad}
               onNewLoad={(orderId) => setForm({ loadId: null, date: currentDay, orderId })}
+              onCompare={setCompare}
+              onSelect={(id) => setSelectedOrderId((cur) => (cur === id ? null : id))}
             />
           ) : null}
 
           <div className="flex min-w-0 flex-1 flex-col gap-6">
+            {live ? (
+              <Card className="flex min-w-0 flex-col gap-2 p-4" role="status">
+                <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm">
+                    <span className="font-medium">
+                      {live.proposals.length} suggested{" "}
+                      {live.proposals.length === 1 ? "load" : "loads"}
+                    </span>
+                    {live.unplaced.length
+                      ? ` · ${live.unplaced.length} ${live.unplaced.length === 1 ? "order" : "orders"} not included`
+                      : ""}
+                    . Nothing changes until you accept one.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {live.unplaced.length ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-expanded={showUnplaced}
+                        onClick={() => setShowUnplaced((v) => !v)}
+                      >
+                        {showUnplaced ? "Hide why" : "Why not included?"}
+                      </Button>
+                    ) : null}
+                    <Button size="sm" onClick={() => setSuggestions(null)}>
+                      Clear suggestions
+                    </Button>
+                  </div>
+                </div>
+                {showUnplaced ? (
+                  <ul className="flex flex-col gap-1" aria-label="Orders not included">
+                    {live.unplaced.map((u) => (
+                      <li key={u.orderId} className="text-sm break-words text-text-muted">
+                        <span className="font-medium text-text">{u.orderRef}</span>: {u.reason}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </Card>
+            ) : null}
             <div
               className={cn(
                 "grid min-w-0 gap-4",
@@ -370,6 +482,7 @@ export function PlanBoard({
             >
               {(view === "day" ? [currentDay] : shownDays).map((d) => {
                 const dayLoads = data.loads.filter((l) => l.load_date === d);
+                const dayProposals = live?.proposals.filter((p) => p.date === d) ?? [];
                 const isPast = d < today;
                 return (
                   <section
@@ -408,6 +521,15 @@ export function PlanBoard({
                         view === "day" && "md:grid-cols-2 xl:grid-cols-3",
                       )}
                     >
+                      {dayProposals.map((p) => (
+                        <ProposalCard
+                          key={p.key}
+                          proposal={p}
+                          data={data}
+                          onDone={() => dropProposal(p.key)}
+                          onEdit={(loadId) => navigate({ load: loadId })}
+                        />
+                      ))}
                       {dayLoads.length ? (
                         dayLoads.map((l) => (
                           <LoadCard
@@ -420,7 +542,7 @@ export function PlanBoard({
                             onOpen={() => navigate({ load: l.id })}
                           />
                         ))
-                      ) : (
+                      ) : dayProposals.length ? null : (
                         <div className="flex min-h-16 items-center justify-center rounded-lg border border-dashed border-border-strong p-4 text-center text-sm text-text-subtle">
                           No loads
                         </div>
@@ -434,6 +556,21 @@ export function PlanBoard({
               <MapPanel
                 title="Orders and loads"
                 pins={pins}
+                routes={routes}
+                selectedId={selectedOrderId ? `order:${selectedOrderId}` : null}
+                onSelect={selectPin}
+                legend={
+                  <MapLegend
+                    items={[
+                      { colour: "load-6", label: "Overdue" },
+                      { colour: "load-3", label: "Due this week" },
+                      { colour: "neutral", label: "Due later" },
+                      ...(data.loads.length
+                        ? [{ colour: loadColour(1), label: "Loads (one colour each)" }]
+                        : []),
+                    ]}
+                  />
+                }
                 emptyMessage="Unplanned orders and planned loads will appear here."
                 onClose={() => setShowMap(false)}
                 className="h-panel min-w-0"
@@ -490,6 +627,13 @@ export function PlanBoard({
             if (state.id && pendingOrder) addToLoad(pendingOrder, state.id);
             if (state.id && !form.loadId) navigate({ load: state.id });
           }}
+        />
+      ) : null}
+      {compare && data.orders[compare] ? (
+        <CompareModal
+          orderId={compare}
+          orderRef={data.orders[compare].order_ref}
+          onClose={() => setCompare(null)}
         />
       ) : null}
     </PageContainer>

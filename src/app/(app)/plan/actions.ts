@@ -8,6 +8,8 @@ import { loadPlanData } from "@/lib/planning/data";
 import { parseLoad, parseStop } from "@/lib/planning/schemas";
 import { LOAD_STATUSES, type LoadStatus } from "@/lib/planning/types";
 import { unresolvedBlocking } from "@/lib/rules";
+import type { DeliveryOption } from "@/lib/suggestions/options";
+import { adviseLoad, adviseOrder, proposeLoads, type LoadAdvice } from "@/lib/suggestions/server";
 import { formObject } from "@/lib/settings/form";
 import type { DeleteResult, FormState } from "@/lib/settings/result";
 import { describeDbError, withCapability } from "@/lib/settings/save";
@@ -283,4 +285,100 @@ export async function clearDecision(loadId: string, key: string): Promise<Delete
     refresh();
     return { ok: true };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Suggestions (spec 8). They only ever propose: every change needs a click.
+// ---------------------------------------------------------------------------
+
+const isoDate = z.iso.date();
+
+export async function suggestLoadsAction(from: string, to: string, days: string[]) {
+  return withCapability("loads.edit", async () => {
+    if (![from, to, ...days].every((d) => isoDate.safeParse(d).success))
+      return fail("Those dates aren't valid.");
+    const result = await proposeLoads(from, to, days);
+    return { ok: true as const, ...result };
+  }) as Promise<
+    ({ ok: true } & Awaited<ReturnType<typeof proposeLoads>>) | { ok: false; error: string }
+  >;
+}
+
+const proposalSchema = z.object({
+  date: isoDate,
+  depotId: uuid,
+  vehicleId: uuid,
+  orderIds: z.array(uuid).min(1).max(200),
+});
+
+/** Turn an accepted suggestion into a real load, orders in the suggested drop order. */
+export async function acceptProposal(input: z.input<typeof proposalSchema>): Promise<FormState> {
+  return plan(async () => {
+    const parsed = proposalSchema.safeParse(input);
+    if (!parsed.success)
+      return { ok: false, error: "That suggestion is out of date. Suggest loads again." };
+    const { date, depotId, vehicleId, orderIds } = parsed.data;
+    const supabase = await createClient();
+    const { data: vehicle } = await supabase
+      .from("vehicles")
+      .select("crew_size_default")
+      .eq("id", vehicleId)
+      .maybeSingle();
+    const { data: created, error } = await supabase
+      .from("loads")
+      .insert({
+        load_date: date,
+        depot_id: depotId,
+        vehicle_id: vehicleId,
+        crew_size: vehicle?.crew_size_default ?? 1,
+      })
+      .select("id")
+      .single();
+    if (error) return describeDbError(error);
+    for (const orderId of orderIds) {
+      const { error: addError } = await supabase.rpc("add_order_to_load", {
+        target_load: created.id,
+        target_order: orderId,
+      });
+      if (addError) {
+        // All or nothing: take the half-made load away again.
+        await supabase.from("loads").delete().eq("id", created.id);
+        return { ok: false, error: `${addError.message} Suggest loads again to get a fresh plan.` };
+      }
+    }
+    refresh();
+    return { ok: true, id: created.id };
+  });
+}
+
+export async function loadAdviceAction(loadId: string) {
+  return withCapability("loads.edit", async () => {
+    if (!uuid.safeParse(loadId).success) return fail("That load couldn't be found.");
+    const supabase = await createClient();
+    const { data: load } = await supabase
+      .from("loads")
+      .select("load_date")
+      .eq("id", loadId)
+      .maybeSingle();
+    if (!load) return fail("This load has been deleted.");
+    const advice = await adviseLoad(loadId, load.load_date);
+    return advice ? { ok: true as const, ...advice } : fail("This load has been deleted.");
+  }) as Promise<({ ok: true } & LoadAdvice) | { ok: false; error: string }>;
+}
+
+export async function orderOptionsAction(orderId: string) {
+  return withCapability("loads.edit", async () => {
+    if (!uuid.safeParse(orderId).success) return fail("That order couldn't be found.");
+    const supabase = await createClient();
+    const { data: order } = await supabase
+      .from("orders")
+      .select("required_date")
+      .eq("id", orderId)
+      .maybeSingle();
+    if (!order) return fail("That order couldn't be found.");
+    const result = await adviseOrder(orderId, order.required_date);
+    return result ? { ok: true as const, ...result } : fail("That order couldn't be compared.");
+  }) as Promise<
+    { ok: true; date: string; options: DeliveryOption[] } | { ok: false; error: string }
+  >;
 }

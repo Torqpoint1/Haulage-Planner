@@ -228,7 +228,7 @@ async function seedSettings(client: Client) {
     { name: "South Wales", colour_tag: "load-3", postcode_areas: ["CF", "NP", "SA"] },
     { name: "Midlands", colour_tag: "load-5", postcode_areas: ["B", "CV", "WR"] },
   ]);
-  const [pallets] = await insert(client, "hauliers", [
+  const [pallets, cotswold] = await insert(client, "hauliers", [
     {
       name: "Severn Pallet Network",
       haulier_type: "pallet_network",
@@ -261,6 +261,20 @@ async function seedSettings(client: Client) {
       waiting_per_hour: 35,
       waiting_free_minutes: 30,
     },
+  ]);
+  // A haulier priced by the load rather than the pallet (spec 6.5).
+  const [cotswoldCard] = await insert(client, "rate_cards", [
+    {
+      haulier_id: cotswold,
+      name: "Cotswold 2026",
+      valid_from: "2026-01-01",
+      per_drop: 25,
+      extra_drop: 15,
+    },
+  ]);
+  await insert(client, "rate_card_load_prices", [
+    { rate_card_id: cotswoldCard, zone_id: west, load_type: "part", price: 165 },
+    { rate_card_id: cotswoldCard, zone_id: west, load_type: "full", price: 295 },
   ]);
   const prices = (zone: string, q: number, h: number, f: number) =>
     (["quarter", "half", "full"] as const).map((size, i) => ({

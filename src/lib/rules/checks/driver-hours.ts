@@ -22,7 +22,9 @@ export const driverHours: Check = (ctx: RuleContext) => {
       "check",
       { type: "load", id: ctx.load.id },
       "Run may be too long for one driver",
-      `Estimate: ${over.join(" and ")}, from straight-line distances with an allowance for roads and unloading.`,
+      run.roadDistances
+        ? `Road route: ${over.join(" and ")}, including time loading and at each stop.`
+        : `Estimate: ${over.join(" and ")}, from straight-line distances with an allowance for roads and unloading.`,
       last.orders.map(removeOrderFix),
     ),
   ];

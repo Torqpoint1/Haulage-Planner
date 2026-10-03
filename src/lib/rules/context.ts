@@ -1,4 +1,5 @@
 import type { OpeningHours } from "@/lib/settings/schemas";
+import type { Legs } from "@/lib/routing/legs";
 import type { Thresholds } from "@/lib/settings/thresholds";
 
 /**
@@ -35,6 +36,7 @@ export type RuleOrder = {
   expected_ready_date: string | null;
   required_date: string;
   latest_date: string | null;
+  urgency?: "standard" | "timed" | "critical";
   lines: RuleLine[];
 };
 
@@ -152,6 +154,10 @@ export type RuleContext = {
   now: Date;
   /** Today in Europe/London, yyyy-mm-dd. */
   today: string;
+  /** Road legs from the routing provider; anything missing is estimated. */
+  legs?: Legs;
+  /** Set when a check is only being re-run to test a vehicle: don't work out fixes. */
+  skipFixes?: boolean;
 };
 
 export const lineWeight = (l: RuleLine) => l.quantity * l.weight_per_unit_kg;

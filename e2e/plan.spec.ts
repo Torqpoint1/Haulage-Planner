@@ -90,8 +90,9 @@ test("the demo loads show every warning in spec 7.2, each in plain English", asy
   await expect(warning(panel, "Newcastle and Gateshead Clean Air Zone")).toContainText(
     "isn't marked clean air zone compliant",
   );
+  // Road routing (the stand-in service) gives road times; without it this reads "Estimate: about".
   await expect(warning(panel, "Run may be too long for one driver")).toContainText(
-    "Estimate: about",
+    "Road route: about",
   );
   await page.keyboard.press("Escape");
 

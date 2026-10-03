@@ -233,6 +233,13 @@ export async function createLoad(
     kind: "override",
     reason: "Production will finish first thing.",
   });
+  const { error: legError } = await client
+    .from("route_legs")
+    .upsert(
+      { from_key: "51.73600,-2.22400", to_key: "51.86142,-2.24412", miles: 11.4, minutes: 23 },
+      { onConflict: "organisation_id,from_key,to_key" },
+    );
+  if (legError) throw new Error(`route_legs: ${legError.message}`);
   return { loadId, stopId: stopId as string, overrideId };
 }
 
@@ -243,4 +250,5 @@ export const PLANNING_TABLES: { table: string; patch: Record<string, unknown> }[
   { table: "stop_orders", patch: { order_id: "00000000-0000-0000-0000-000000000000" } },
   { table: "warning_overrides", patch: { reason: "Hijacked" } },
   { table: "compliance_zones", patch: { name: "Hijacked zone" } },
+  { table: "route_legs", patch: { miles: 0 } },
 ];

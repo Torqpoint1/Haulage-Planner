@@ -9,30 +9,33 @@ Build in the stages of spec section 14, in order, and only start a stage once th
 
 ## Current stage
 
-**Stage 5: Planning core. Complete; awaiting sign-off.** (Stages 0–4 signed off.)
+**Stage 6: Map and suggestions. Complete; awaiting sign-off.** (Stages 0–5 signed off.)
 
-- Done: plan board (week Mon–Fri with Sat/Sun toggle, day view, URL-driven), unplanned order
-  pool with search and filters (due, readiness, postcode zone, urgency, customer), load cards
-  (vehicle/haulier, driver, stops, space and weight bars, estimated miles and cost, warnings),
-  drag-and-drop with a live capacity preview before dropping, plus "Add to load" menus and
-  up/down buttons as non-drag alternatives. Load side panel: summary, warnings with working
-  fixes, override with reason, dismiss (logged), stops with drag/button reorder, booking and
-  confirmation fields, status actions. Confirming re-runs every check on the server and refuses
-  while an un-overridden blocking warning remains. All 18 checks of spec 7.2 as pure functions
-  with unit tests. Compliance zones seeded per organisation (Settings shows the data date).
-  261 database tests.
-- Decisions (agreed with the user): compliance zone data is seeded from published boundaries
-  as of 02/10/2026 and admin-editable; ASSET_OVERDUE is written and tested but has no data until
-  Stage 9; run times and ETAs are straight-line × 1.3 at 30 mph plus stop time, always labelled
-  "estimate", until road routing in Stage 6.
-- Deferred: suggested loads, cheapest valid option, fill the gaps, stop-order suggestion and
-  real road distances/route lines (Stage 6); customer page Orders tab; customer/site and vehicle
-  CSV imports; saved order filters per browser.
+- Done: road distances from OpenRouteService (HGV profile) behind `src/lib/services/routing.ts`,
+  cached per organisation in `route_legs`, falling back to straight line × 1.3 labelled as an
+  estimate. Map on the plan board: unplanned orders coloured by when they're needed, loads in
+  their own colours with route lines, pin ↔ order card selection. Suggested loads (8.1) as ghost
+  cards with summary, "Why this load?", Accept / Edit / Dismiss, and the orders it couldn't
+  place with reasons. Cheapest valid option (8.2) for every load and for any unplanned order
+  ("Compare options…"): own vehicles from miles × £/mile + hours × crew × £/hour, hauliers and
+  pallet networks from their current rate card with drops and surcharges; invalid options greyed
+  at the bottom with reasons; breakdown on tap. Fill the gaps (8.3) and a suggested drop order
+  (8.4) in the load panel. Nothing applies without a click.
+- Decisions (agreed with the user): MapTiler tiles (used whenever `NEXT_PUBLIC_MAP_TILE_KEY` is
+  set); ORS with fallback (`ORS_API_KEY`). Mine: pallet size comes from standard UK
+  pallet-network bands (fits 1200 × 1000 mm; quarter ≤ 800 mm/250 kg, half ≤ 1100 mm/500 kg, full
+  ≤ 2200 mm/1000 kg), units bigger than a pallet can't go by pallet network; part-load prices
+  apply up to half a 13.6 m trailer; own-vehicle cost counts every crew member's hours; the drop
+  order is nearest-neighbour then 2-opt (skipped when a stop has a fixed slot).
+- Deferred: asset collection suggestions (8.5) need assets (Stage 9); the remaining items listed
+  for earlier stages (customer Orders tab, other CSV imports).
 - Not yet: emailed invitations and password reset (need Resend); GDPR export/deletion.
-- Next: **Stage 6: Map and suggestions**.
+- Next: **Stage 7: Warehouse**.
 - Open: no hosted Supabase project yet. postcodes.io and OpenRouteService are blocked by this
   cloud environment's network policy; browser tests use `e2e/support/mock-postcodes.mjs`
-  (started by Playwright, `POSTCODES_API_URL=http://localhost:3199`).
+  (`POSTCODES_API_URL=http://localhost:3199`) and `e2e/support/mock-ors.mjs`
+  (`ORS_API_URL=http://localhost:3198`, roads = straight line × 1.25 at 40 mph), both started by
+  Playwright. Playwright reuses servers already running on those ports locally.
 
 ## Commands
 
@@ -138,6 +141,15 @@ In the Claude Code cloud environment, Chromium is preinstalled and `@playwright/
   `private.compliance_zone_defaults` when an organisation is created). Functions
   `add_order_to_load`, `remove_order_from_load`, `reorder_stops` (atomic, SECURITY INVOKER).
   Order status follows its load by trigger; editing a confirmed load sends it back to planned.
+- `src/lib/routing/`: `legs.ts` (shared: `pointKey`, `legKey`, `legBetween` = road leg or
+  estimate; `crowMiles`), `server.ts` (`routeLegs` with shapes for loads, `matrixLegs` for
+  suggestions; cache first, provider second, never throws). `RuleContext.legs` feeds
+  `estimateRun`, which reports `roadDistances`.
+- `src/lib/suggestions/`: pure engines with tests: `options.ts` (`deliveryOptions`,
+  `palletSize`), `suggest-loads.ts` (`suggestLoads`, `dayFor`), `fill-gaps.ts`, `stop-order.ts`
+  (`nearestNeighbour`, `untangle`, `suggestStopOrder`); `server.ts` runs them with road
+  distances. The plan board's `proposal-card.tsx`, `load-advice.tsx`, `options-list.tsx` and
+  `compare-modal.tsx` show them.
 - `src/lib/branding.ts`: logo storage paths and signed URLs; `(app)/layout.tsx` injects the
   organisation's accent colour.
 
@@ -166,6 +178,9 @@ In the Claude Code cloud environment, Chromium is preinstalled and `@playwright/
 - **Warnings are calculated, never stored.** Only the planner's decision (override with reason,
   or dismissal) is stored. Anything that blocks must be re-checked on the server before it's
   allowed (see `setLoadStatus`).
+- **Suggestions only propose.** Every engine returns reasons alongside the proposal; applying
+  one is a separate, explicit action. Label anything estimated ("est.") and say why an option is
+  invalid rather than hiding it.
 - **Lists** pass `renderCard` to `DataTable` so phones and tablets get stacked cards instead of a
   sideways-scrolling table.
 - **Roles are enforced three times**: hidden in the UI (`navFor`, `can`), checked in pages and

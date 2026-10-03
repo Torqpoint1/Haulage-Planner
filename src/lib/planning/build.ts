@@ -81,6 +81,7 @@ export function buildContext(
     assets: [],
     now: clock.now,
     today: clock.today,
+    legs: data.legs,
   };
 }
 
