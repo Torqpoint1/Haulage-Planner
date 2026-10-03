@@ -57,12 +57,15 @@ let dropNames: string[] = [];
 test("the pick sheet lists stops in reverse drop order, with handling and securing notes", async ({
   page,
 }) => {
-  ({ names: dropNames, loadId } = await dropOrder(page));
-  expect(dropNames.length).toBeGreaterThan(1);
-
-  const sheet = await openWarehouse(page);
-  const sections = sheet.getByRole("list", { name: "Load order" }).locator(":scope > li h3");
-  await expect(sections).toHaveText([...dropNames].reverse());
+  // Other specs running in parallel may change this load's stops, so read both together.
+  let sheet = page.locator("never");
+  await expect(async () => {
+    ({ names: dropNames, loadId } = await dropOrder(page));
+    expect(dropNames.length).toBeGreaterThan(1);
+    sheet = await openWarehouse(page);
+    const sections = sheet.getByRole("list", { name: "Load order" }).locator(":scope > li h3");
+    await expect(sections).toHaveText([...dropNames].reverse(), { timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
   await expect(
     sheet.getByRole("list", { name: "Load order" }).locator(":scope > li").first(),
   ).toContainText(`Load first · drop ${dropNames.length} of ${dropNames.length} (last drop)`);
@@ -176,16 +179,20 @@ test("pick sheet, run sheet and delivery notes print cleanly on A4", async ({ pa
     await page.emulateMedia({ media: "screen" });
   }
 
-  // The printed pick sheet keeps the same load order.
-  await page.goto(`/print/loads/${loadId}/pick`);
-  const printed = page
-    .getByRole("main", { name: "Pick sheet" })
-    .locator("section h2 span:not(.pos)");
-  await expect(printed).toHaveText(
-    [...dropNames]
-      .reverse()
-      .map((n) => new RegExp(`^${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")},`)),
-  );
+  // The printed pick sheet keeps the same load order. Other specs running in parallel
+  // may change this load's stops, so read the drop order and the print together.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(async () => {
+    const { names } = await dropOrder(page);
+    await page.goto(`/print/loads/${loadId}/pick`);
+    const printed = page
+      .getByRole("main", { name: "Pick sheet" })
+      .locator("section h2 span:not(.pos)");
+    await expect(printed).toHaveText(
+      [...names].reverse().map((n) => new RegExp(`^${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")},`)),
+      { timeout: 2_000 },
+    );
+  }).toPass({ timeout: 30_000 });
 });
 
 test.describe("office staff", () => {
