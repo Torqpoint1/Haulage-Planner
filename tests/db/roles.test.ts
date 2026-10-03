@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { createCustomer, createLoad, createOrder, createSettings } from "./fixtures";
+import { createCustomer, createLoad, createOrder, createSettings, uploadPodFile } from "./fixtures";
 import { createOrg, member, service, type Role, type TestOrg } from "./helpers";
 
 /**
@@ -829,4 +829,304 @@ describe("warehouse: pickers tick lines, others can't (spec 3, 9.5)", () => {
       expect(await pick(lineId)).toBeNull();
     });
   }
+});
+
+describe("drivers record proof of delivery on their own loads (spec 3, 6.10, 9.8)", () => {
+  let settings: Awaited<ReturnType<typeof createSettings>>;
+  let first: Awaited<ReturnType<typeof createCustomer>>;
+  let second: Awaited<ReturnType<typeof createCustomer>>;
+  const planner = () => member(org, "planner").client;
+  const driver = () => member(org, "driver").client;
+
+  beforeAll(async () => {
+    settings = await createSettings(org.admin.client, "pod", member(org, "driver").id);
+    first = await createCustomer(org.admin.client, "pod-one");
+    second = await createCustomer(org.admin.client, "pod-two");
+  });
+
+  async function order(ref: string, site: { customerId: string; siteId: string }) {
+    const { data, error } = await planner().rpc("save_order", {
+      target_order_id: null,
+      order_data: {
+        customer_id: site.customerId,
+        site_id: site.siteId,
+        order_ref: ref,
+        required_date: "2026-10-12",
+      },
+      lines: [
+        { unit_type_id: settings.unitTypeId, quantity: 3, weight_per_unit_kg: 100 },
+        { unit_type_id: settings.unitTypeId, quantity: 2, weight_per_unit_kg: 50 },
+      ],
+    });
+    if (error) throw error;
+    return data as string;
+  }
+
+  /** A confirmed load with one stop per site given, the driver on it unless told otherwise. */
+  async function run(
+    ref: string,
+    sites = [first],
+    opts: { driver?: boolean; status?: string } = {},
+  ) {
+    const { data: load } = await planner()
+      .from("loads")
+      .insert({ load_date: "2026-10-12", depot_id: settings.depotId })
+      .select("id")
+      .single();
+    if (opts.driver !== false) {
+      await planner()
+        .from("load_drivers")
+        .insert({ load_id: load!.id, driver_id: settings.driverId });
+    }
+    const stops: string[] = [];
+    const orders: string[] = [];
+    for (const [i, site] of sites.entries()) {
+      const orderId = await order(`${ref}-${i + 1}`, site);
+      const { data: stopId, error } = await planner().rpc("add_order_to_load", {
+        target_load: load!.id,
+        target_order: orderId,
+      });
+      if (error) throw error;
+      stops.push(stopId as string);
+      orders.push(orderId);
+    }
+    await planner()
+      .from("loads")
+      .update({ status: opts.status ?? "confirmed" })
+      .eq("id", load!.id);
+    return { loadId: load!.id as string, stops, orders };
+  }
+
+  const loadStatus = async (id: string) =>
+    (await service.from("loads").select("status").eq("id", id).single()).data?.status;
+  const orderStatus = async (id: string) =>
+    (await service.from("orders").select("status").eq("id", id).single()).data?.status;
+  const stopStatus = async (id: string) =>
+    (await service.from("load_stops").select("status").eq("id", id).single()).data?.status;
+
+  async function delivered(stopId: string, extra: Record<string, unknown> = {}, client = driver()) {
+    const signature = await uploadPodFile(client, stopId, "signature.png");
+    return client.rpc("record_pod", {
+      client_id: crypto.randomUUID(),
+      target_stop: stopId,
+      outcome: "delivered",
+      received_by: "Jo Bloggs",
+      signature_path: signature,
+      ...extra,
+    });
+  }
+
+  it("the driver records a signed delivery; the stop, order and load follow", async () => {
+    const r = await run("POD-1", [first, second]);
+    const recordedAt = new Date(Date.now() - 2 * 3600_000).toISOString();
+    const { data: podId, error } = await delivered(r.stops[0], {
+      recorded_at: recordedAt,
+      latitude: 51.75,
+      longitude: -2.2,
+      accuracy_m: 12,
+    });
+    expect(error).toBeNull();
+    expect(await stopStatus(r.stops[0])).toBe("delivered");
+    expect(await orderStatus(r.orders[0])).toBe("delivered");
+    expect(await orderStatus(r.orders[1])).toBe("out_for_delivery");
+    expect(await loadStatus(r.loadId)).toBe("out");
+    const { data: pod } = await service.from("pods").select("*").eq("id", podId).single();
+    expect(pod).toMatchObject({
+      outcome: "delivered",
+      received_by: "Jo Bloggs",
+      recorded_by: member(org, "driver").id,
+      latitude: 51.75,
+    });
+    // Recorded offline: the phone's time is kept.
+    expect(new Date(pod!.recorded_at).toISOString()).toBe(new Date(recordedAt).toISOString());
+    const { data: lines } = await service.from("pod_lines").select("*").eq("pod_id", podId);
+    expect(lines?.map((l) => [l.ordered_quantity, l.delivered_quantity]).sort()).toEqual([
+      [2, 2],
+      [3, 3],
+    ]);
+
+    await delivered(r.stops[1]);
+    expect(await loadStatus(r.loadId)).toBe("complete");
+    expect(await orderStatus(r.orders[1])).toBe("delivered");
+  });
+
+  it("sending the same submission twice records it once", async () => {
+    const r = await run("POD-2");
+    const signature = await uploadPodFile(driver(), r.stops[0], "signature.png");
+    const submission = {
+      client_id: crypto.randomUUID(),
+      target_stop: r.stops[0],
+      outcome: "delivered",
+      received_by: "Jo Bloggs",
+      signature_path: signature,
+    };
+    const a = await driver().rpc("record_pod", submission);
+    const b = await driver().rpc("record_pod", submission);
+    expect(a.error).toBeNull();
+    expect(b.data).toBe(a.data);
+    const { count } = await service
+      .from("pods")
+      .select("*", { count: "exact", head: true })
+      .eq("stop_id", r.stops[0]);
+    expect(count).toBe(1);
+  });
+
+  it("a delivery needs a name and a signature, or a photo when nobody can sign", async () => {
+    const r = await run("POD-3");
+    const base = { client_id: crypto.randomUUID(), target_stop: r.stops[0], outcome: "delivered" };
+    const noName = await driver().rpc("record_pod", base);
+    expect(noName.error?.message).toMatch(/name of the person/);
+    const noSignature = await driver().rpc("record_pod", { ...base, received_by: "Jo Bloggs" });
+    expect(noSignature.error?.message).toMatch(/signature/);
+    const photo = await uploadPodFile(driver(), r.stops[0], "photo.jpg");
+    const leftSafe = await driver().rpc("record_pod", {
+      ...base,
+      received_by: "Left in porch",
+      no_signature: true,
+      photo_paths: [photo],
+    });
+    expect(leftSafe.error).toBeNull();
+    expect(await stopStatus(r.stops[0])).toBe("delivered");
+  });
+
+  it("files must be uploaded, and in this stop's folder", async () => {
+    const r = await run("POD-4", [first, second]);
+    const missing = await driver().rpc("record_pod", {
+      client_id: crypto.randomUUID(),
+      target_stop: r.stops[0],
+      outcome: "delivered",
+      received_by: "Jo Bloggs",
+      signature_path: `${org.id}/pods/${r.stops[0]}/never-uploaded.png`,
+    });
+    expect(missing.error?.message).toMatch(/hasn't finished uploading/);
+    const elsewhere = await uploadPodFile(driver(), r.stops[1], "signature.png");
+    const wrong = await driver().rpc("record_pod", {
+      client_id: crypto.randomUUID(),
+      target_stop: r.stops[0],
+      outcome: "delivered",
+      received_by: "Jo Bloggs",
+      signature_path: elsewhere,
+    });
+    expect(wrong.error?.message).toMatch(/wrong place/);
+    expect(await stopStatus(r.stops[0])).toBe("pending");
+  });
+
+  it("a part delivery records what was delivered, and must be short of something", async () => {
+    const r = await run("POD-5");
+    const { data: lines } = await service
+      .from("order_lines")
+      .select("id, quantity")
+      .eq("order_id", r.orders[0])
+      .order("quantity");
+    const [two, three] = lines!;
+    const all = await delivered(r.stops[0], {
+      outcome: "part_delivered",
+      lines: [
+        { order_line_id: two.id, quantity: 2 },
+        { order_line_id: three.id, quantity: 3 },
+      ],
+    });
+    expect(all.error?.message).toMatch(/some, but not everything/);
+    const tooMany = await delivered(r.stops[0], {
+      outcome: "part_delivered",
+      lines: [{ order_line_id: two.id, quantity: 5 }],
+    });
+    expect(tooMany.error?.message).toMatch(/between 0 and the quantity ordered/);
+    const { data: podId, error } = await delivered(r.stops[0], {
+      outcome: "part_delivered",
+      note: "One frame damaged, returned to depot",
+      lines: [{ order_line_id: three.id, quantity: 2 }],
+    });
+    expect(error).toBeNull();
+    const { data: saved } = await service
+      .from("pod_lines")
+      .select("order_line_id, delivered_quantity")
+      .eq("pod_id", podId);
+    expect(Object.fromEntries(saved!.map((l) => [l.order_line_id, l.delivered_quantity]))).toEqual({
+      [two.id]: 2,
+      [three.id]: 2,
+    });
+    expect(await stopStatus(r.stops[0])).toBe("part_delivered");
+  });
+
+  it("a failed delivery needs a reason and a note, and can be put back to plan", async () => {
+    const r = await run("POD-6");
+    const base = { client_id: crypto.randomUUID(), target_stop: r.stops[0], outcome: "failed" };
+    expect((await driver().rpc("record_pod", base)).error?.message).toMatch(/why the delivery/);
+    expect(
+      (await driver().rpc("record_pod", { ...base, failure_reason: "site_closed" })).error?.message,
+    ).toMatch(/note/);
+    const { data: podId, error } = await driver().rpc("record_pod", {
+      ...base,
+      failure_reason: "site_closed",
+      note: "Gates locked, no answer on the phone",
+    });
+    expect(error).toBeNull();
+    expect(await orderStatus(r.orders[0])).toBe("failed");
+    expect(await stopStatus(r.stops[0])).toBe("failed");
+    expect(await loadStatus(r.loadId)).toBe("complete");
+    const { data: lines } = await service.from("pod_lines").select("*").eq("pod_id", podId);
+    expect(lines?.every((l) => l.delivered_quantity === 0)).toBe(true);
+
+    expect(
+      (await driver().rpc("replan_failed_order", { target_order: r.orders[0] })).error,
+    ).not.toBeNull();
+    expect(
+      (await planner().rpc("replan_failed_order", { target_order: r.orders[0] })).error,
+    ).toBeNull();
+    expect(await orderStatus(r.orders[0])).toBe("unplanned");
+    // The attempt stays on record.
+    expect((await service.from("pods").select("id").eq("id", podId)).data).toHaveLength(1);
+  });
+
+  it("only drivers on the load, planners and admins can record, and only once it's confirmed", async () => {
+    const notMine = await run("POD-7", [first], { driver: false });
+    expect((await delivered(notMine.stops[0])).error?.message).toMatch(/not a driver on this load/);
+    for (const role of ["office", "warehouse"] as const) {
+      const r = await run(`POD-8-${role}`);
+      const { error } = await delivered(r.stops[0], {}, driver()).then(() =>
+        member(org, role).client.rpc("record_pod", {
+          client_id: crypto.randomUUID(),
+          target_stop: r.stops[0],
+          outcome: "failed",
+          failure_reason: "other",
+          note: "Not my job",
+        }),
+      );
+      expect(error, role).not.toBeNull();
+    }
+    const planned = await run("POD-9", [first], { status: "planned" });
+    expect((await delivered(planned.stops[0])).error?.message).toMatch(/hasn't been confirmed/);
+    // Drivers can't change stops or PODs directly.
+    const { data: changed } = await driver()
+      .from("load_stops")
+      .update({ status: "delivered" })
+      .eq("id", planned.stops[0])
+      .select();
+    expect(changed ?? []).toEqual([]);
+    const direct = await driver().from("pods").insert({
+      stop_id: planned.stops[0],
+      load_id: planned.loadId,
+      client_id: crypto.randomUUID(),
+      outcome: "failed",
+      failure_reason: "other",
+      note: "Direct",
+      recorded_at: new Date().toISOString(),
+    });
+    expect(direct.error).not.toBeNull();
+  });
+
+  it("once a load is complete, only a planner can correct it", async () => {
+    const r = await run("POD-10");
+    await delivered(r.stops[0]);
+    expect(await loadStatus(r.loadId)).toBe("complete");
+    expect((await delivered(r.stops[0])).error?.message).toMatch(/complete/);
+    const fix = await delivered(r.stops[0], { received_by: "Sam Smith" }, planner());
+    expect(fix.error).toBeNull();
+    const { data: pods } = await service
+      .from("pods")
+      .select("received_by")
+      .eq("stop_id", r.stops[0]);
+    expect(pods).toEqual([{ received_by: "Sam Smith" }]);
+  });
 });

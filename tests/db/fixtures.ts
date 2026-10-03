@@ -263,4 +263,68 @@ export const PLANNING_TABLES: { table: string; patch: Record<string, unknown> }[
   { table: "compliance_zones", patch: { name: "Hijacked zone" } },
   { table: "route_legs", patch: { miles: 0 } },
   { table: "pick_lines", patch: { picked: false } },
+  { table: "pods", patch: { received_by: "Hijacked" } },
+  { table: "pod_lines", patch: { delivered_quantity: 0 } },
 ];
+
+export type PodFixture = { orderId: string; loadId: string; stopId: string; podId: string };
+
+/**
+ * A second order on its own confirmed load, delivered with a signed POD; through
+ * the API. Kept apart from createLoad so that load stays editable.
+ */
+export async function createPod(
+  client: SupabaseClient,
+  label: string,
+  settings: SettingsFixture,
+  customer: CustomerFixture,
+): Promise<PodFixture> {
+  const { data: orderId, error } = await client.rpc("save_order", {
+    target_order_id: null,
+    order_data: {
+      customer_id: customer.customerId,
+      site_id: customer.siteId,
+      order_ref: `${label.toUpperCase()}-2001`,
+      required_date: "2026-10-12",
+    },
+    lines: [{ unit_type_id: settings.unitTypeId, quantity: 2, weight_per_unit_kg: 140 }],
+  });
+  if (error) throw new Error(`save_order: ${error.message}`);
+  const loadId = await insert(client, "loads", {
+    load_date: "2026-10-12",
+    depot_id: settings.depotId,
+    vehicle_id: settings.vehicleId,
+  });
+  await insert(client, "load_drivers", { load_id: loadId, driver_id: settings.driverId });
+  const { data: stopId, error: addError } = await client.rpc("add_order_to_load", {
+    target_load: loadId,
+    target_order: orderId,
+  });
+  if (addError) throw new Error(`add_order_to_load: ${addError.message}`);
+  await client.from("loads").update({ status: "confirmed" }).eq("id", loadId);
+  const signature = await uploadPodFile(client, stopId as string, "signature.png");
+  const { data: podId, error: podError } = await client.rpc("record_pod", {
+    client_id: crypto.randomUUID(),
+    target_stop: stopId,
+    outcome: "delivered",
+    received_by: "Jo Bloggs",
+    signature_path: signature,
+  });
+  if (podError) throw new Error(`record_pod: ${podError.message}`);
+  return { orderId: orderId as string, loadId, stopId: stopId as string, podId: podId as string };
+}
+
+/** Upload a small file to a stop's POD folder and return its path. */
+export async function uploadPodFile(client: SupabaseClient, stopId: string, name: string) {
+  const { data: stop } = await client
+    .from("load_stops")
+    .select("organisation_id")
+    .eq("id", stopId)
+    .single();
+  const path = `${stop!.organisation_id}/pods/${stopId}/${crypto.randomUUID()}/${name}`;
+  const { error } = await client.storage
+    .from("organisation-files")
+    .upload(path, new Blob(["image"]), { contentType: "image/png" });
+  if (error) throw new Error(`upload: ${error.message}`);
+  return path;
+}

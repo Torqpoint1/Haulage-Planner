@@ -208,19 +208,19 @@ test("drivers: licences, working days and a linked login", async ({ page }) => {
   await expect(panel.getByText("Enter the driver's name.")).toBeVisible();
   await expect(panel.getByText("Use digits, spaces and + ( ) - only.")).toBeVisible();
 
-  await field(panel, "Name").fill("Dan Driver");
+  await field(panel, "Name").fill("Rhys Relief");
   await field(panel, "Phone").fill("07700 900789");
   await panel.getByRole("checkbox", { name: "C1 (up to 7.5t)" }).click();
   await panel.getByRole("checkbox", { name: "Saturday" }).click();
-  await choose(page, panel, "Linked login", /^Dan Driver/);
+  await choose(page, panel, "Linked login", /^Rhys Relief/);
   await save(page, "driver");
   await expect(page.getByText("Driver saved")).toBeVisible();
 
-  const row = list(page, "Drivers").getByRole("row", { name: /Dan Driver/ });
+  const row = list(page, "Drivers").getByRole("row", { name: /Rhys Relief/ });
   await expect(row).toContainText("C1");
   await expect(row).toContainText("Mon, Tue, Wed, Thu, Fri, Sat");
   await expect(row).toContainText("Login linked");
-  await deleteRow(page, row, "Dan Driver");
+  await deleteRow(page, row, "Rhys Relief");
 });
 
 test("postcode zones: areas are validated and can't overlap", async ({ page }) => {

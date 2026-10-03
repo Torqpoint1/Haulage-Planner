@@ -48,6 +48,9 @@
   --spacing-day: 192px;
   /* Warehouse: the Picked / Loaded / Shortage buttons beside a line. */
   --spacing-tick-actions: 352px;
+  /* Driver view: the signature box and photo thumbnails. */
+  --spacing-signature: 176px;
+  --spacing-thumb: 72px;
 
   /* ---- Typography (10.1): 12/14/16/20/24/32, weights 400/500/600 ---- */
   --font-*: initial;

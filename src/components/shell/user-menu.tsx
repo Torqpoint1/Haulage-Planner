@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ROLE_INFO, type Role } from "@/lib/auth/roles";
 import { cn } from "@/lib/cn";
+import { clearOfflineRun } from "@/components/offline/offline-support";
 import { signOut } from "./actions";
 
 type UserMenuProps = {
@@ -96,7 +97,15 @@ export function UserMenu({
           </DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem disabled={signingOut} onSelect={() => startSignOut(() => signOut())}>
+        <DropdownMenuItem
+          disabled={signingOut}
+          onSelect={() =>
+            startSignOut(() => {
+              clearOfflineRun();
+              return signOut();
+            })
+          }
+        >
           <LogOut aria-hidden /> Sign out
         </DropdownMenuItem>
       </DropdownMenuContent>

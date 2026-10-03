@@ -60,6 +60,7 @@ import {
 } from "./actions";
 import { LoadAdvicePanel } from "./load-advice";
 import { PickingLine, SpaceBar, WeightBar, type LoadView } from "./load-card";
+import { OutcomeBadge, PodModal } from "./pod-modal";
 
 /** The next step for each status, and the way back where there is one. */
 const NEXT: Partial<Record<LoadStatus, { to: LoadStatus; label: string }>> = {
@@ -218,6 +219,7 @@ function StopRow({
   const site = data.sites[stop.site_id];
   const orders = stop.order_ids.map((id) => data.orders[id]).filter(Boolean);
   const [open, setOpen] = useState(false);
+  const [podOpen, setPodOpen] = useState(false);
   const [pending, start] = useTransition();
   const focused = focus?.stopId === stop.id;
   const editable = canEdit && !locked;
@@ -309,6 +311,22 @@ function StopRow({
           </div>
         ) : null}
       </div>
+
+      {stop.status !== "pending" ? (
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+          <OutcomeBadge status={stop.status} />
+          <Button size="sm" onClick={() => setPodOpen(true)}>
+            Proof of delivery
+          </Button>
+          <PodModal
+            stopId={stop.id}
+            title={`Stop ${index + 1}: ${site?.name ?? "Site"}`}
+            canEdit={canEdit}
+            open={podOpen}
+            onOpenChange={setPodOpen}
+          />
+        </div>
+      ) : null}
 
       <ul className="flex min-w-0 flex-col gap-1">
         {orders.map((o) => (

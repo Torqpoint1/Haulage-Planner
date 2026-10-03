@@ -1,24 +1,25 @@
-import { Route } from "lucide-react";
 import type { Metadata } from "next";
-import { PageContainer, PageHeader } from "@/components/shell/page";
-import { Card } from "@/components/ui/card";
-import { EmptyState } from "@/components/ui/empty-state";
+import { connection } from "next/server";
 import { requireArea } from "@/lib/auth/session";
+import { loadDriverRun } from "@/lib/drivers/data";
+import { DriverRunView } from "./driver-run";
 
 export const metadata: Metadata = { title: "My run" };
 
-export default async function DriverPage() {
-  await requireArea("driver");
+export default async function DriverPage({ searchParams }: PageProps<"/driver">) {
+  const session = await requireArea("driver");
+  await connection(); // "today" must be worked out per request
+  const params = await searchParams;
+  const run = await loadDriverRun({
+    userId: session.userId,
+    isAdmin: session.membership.role === "admin",
+    driverId: typeof params.driver === "string" ? params.driver : null,
+  });
   return (
-    <PageContainer>
-      <PageHeader title="My run" description="Your stops for today, in order." />
-      <Card>
-        <EmptyState
-          icon={Route}
-          title="No run assigned today"
-          description="When a planner assigns you a load, your stops, contacts, delivery instructions and booking slots appear here."
-        />
-      </Card>
-    </PageContainer>
+    <DriverRunView
+      run={run}
+      userId={session.userId}
+      organisationId={session.membership.organisation.id}
+    />
   );
 }

@@ -9,22 +9,30 @@ Build in the stages of spec section 14, in order, and only start a stage once th
 
 ## Current stage
 
-**Stage 7: Warehouse. Complete; awaiting sign-off.** (Stages 0–6 signed off.)
+**Stage 8: Drivers. Complete; awaiting sign-off.** (Stages 0–7 signed off.)
 
-- Done: warehouse screen (`/warehouse?date=&load=`): day picker, the day's loads with picked and
-  loaded progress, and a pick sheet per load in load order (last drop first) showing order ref,
-  customer, PO, quantities, handling notes and load securing notes from the unit settings.
-  Large Picked / Loaded / Shortage buttons; a shortage needs a note. Progress and shortages show
-  to the planner on the load card and in the load panel. A4 print layouts (spec 10.8) for the pick
-  sheet, driver run sheet and delivery notes: black and white, organisation logo, page numbers,
-  no app chrome; printed from the warehouse or the plan panel.
-- Decisions (mine): "delivery note summary" is one signed delivery note per drop (a page each);
-  ticks are kept per order line while the order is on a load and cleared if it comes off; loads
-  that are out or complete can't be ticked; office staff can print but not open the warehouse.
-- Deferred: asset collection suggestions (8.5) and returnable assets (Stage 9); customer page
-  Orders tab; other CSV imports.
+- Done: driver phone view (`/driver`): today's loads for the driver linked to the login (admins
+  can pick any driver), stops in drop order with address, Navigate (Apple Maps on iPhone, Google
+  Maps elsewhere, at the pin), tap-to-call contacts (site and customer-wide), delivery
+  instructions, access/site rules, booking slot or ETA, handling notes and orders. Delivered /
+  Part delivered / Failed capture name, signature, photos (compressed on the phone, up to 6),
+  quantities, damage notes and location (if allowed); failed needs a reason from a fixed list and
+  a note. Submissions go to an IndexedDB outbox and send when there's signal; a service worker
+  keeps the run page and its files so it reopens without signal. Planners see the outcome on
+  each stop and the full proof of delivery (signature, photos, quantities, notes, location), and
+  can put a failed order back to plan.
+- Decisions (mine): failure reasons are a fixed generic list (not a setting; spec 9.x has no
+  section for them); "Nobody available to sign" is allowed when a photo is taken instead;
+  recording the first stop sets the load to out and the last one to complete; orders follow
+  (part delivered counts as delivered, with the shortfall on the POD); drivers can correct a
+  stop until the load is complete, planners any time; drivers only see loads from planned
+  onwards and can record once confirmed; a newer record for a stop replaces the old one; the
+  phone's own time is kept as when it was recorded.
+- Deferred: asset collection suggestions (8.5) and returnable assets at stops (Stage 9);
+  general "report an issue" for drivers beyond failed deliveries; customer page Orders tab;
+  other CSV imports.
 - Not yet: emailed invitations and password reset (need Resend); GDPR export/deletion.
-- Next: **Stage 8: Drivers**.
+- Next: **Stage 9: History and assets**.
 - Open: no hosted Supabase project yet. postcodes.io and OpenRouteService are blocked by this
   cloud environment's network policy; browser tests use `e2e/support/mock-postcodes.mjs`
   (`POSTCODES_API_URL=http://localhost:3199`) and `e2e/support/mock-ors.mjs`
@@ -49,7 +57,9 @@ Build in the stages of spec section 14, in order, and only start a stage once th
 `npx supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor,realtime,postgres-meta`.
 Playwright builds the app and runs `next start` on port 3100 with `ENABLE_DEV_GALLERY=1`. A setup
 project creates "Example Doors Ltd" with admin, office, warehouse and driver users and saves their
-sessions in `e2e/.auth/` (gitignored); tests default to the admin. The company is seeded with
+sessions in `e2e/.auth/` (gitignored); tests default to the admin. "Dan Driver" is linked to a
+driver with a confirmed run today (DR-4xx, `seedDriverRun`); "Rhys Relief" is a second, unlinked
+driver login for the settings test. The company is seeded with
 realistic settings (`seedSettings` in `e2e/support/accounts.ts`), so tests that create things use
 names that don't clash with the seed.
 In the Claude Code cloud environment, Chromium is preinstalled and `@playwright/test` is pinned to
@@ -153,6 +163,27 @@ In the Claude Code cloud environment, Chromium is preinstalled and `@playwright/
 - `src/app/print/`: print layouts outside the app shell (`print.css`, plain black on white, not
   themed tokens). `loads/[id]/[sheet]` with sheet = pick | run | delivery; `PrintShell` adds the
   header, the screen-only toolbar and an `@page` rule (A4, page numbers in the margin).
+- `src/lib/drivers/`: `types.ts` (run shapes, `FAILURE_REASONS`, `OUTCOMES`), `data.ts`
+  (`loadDriverRun`, built on `loadSheets`), `pod.ts` (`validatePod` shared phone/server,
+  `podSubmissionSchema`, `PodResult` with `retry`), `queue.ts` (IndexedDB outbox), `photos.ts`
+  (shrink before queuing), `navigate.ts` (map app and tel: links), `details.ts` (planner view with
+  signed URLs). Tested where pure.
+- `src/app/(app)/driver/`: `driver-run.tsx`, `record-sheet.tsx`, `signature-pad.tsx` (black on
+  white canvas), `use-pod-queue.ts` (sends on save, on `online`, on foreground and every 20 s;
+  uploads files with upsert, then `recordPod`), `actions.ts`.
+- Offline: `public/sw.js` (network-first for `/driver`, cache-first for `/_next/static`; the page
+  posts its loaded files to precache; sign-out posts "clear"), registered by
+  `src/components/offline/offline-support.tsx` in production only.
+- Drivers DB: `pods` (one per stop; `client_id` unique per organisation makes resends harmless),
+  `pod_lines` (delivered vs ordered per order line). `record_pod(...)` is the only write path:
+  SECURITY DEFINER because drivers can't edit stops, so it checks the caller is a driver on the
+  load (or planner/admin), that files are in the stop's folder and already uploaded, and sets
+  stop, order and load status. `replan_failed_order` takes a failed order off its load. Files:
+  `<org>/pods/<stop>/<client id>/signature.png|photo-n.jpg`.
+- Plan board: `pod-modal.tsx` / `pod-actions.ts` show a stop's POD from the load panel.
+- PostgREST embeds between tables joined by two composite keys are ambiguous (e.g.
+  `pod_lines → order_lines`); name the key (`order_lines!pod_lines_order_line_id_organisation_id_fkey`)
+  or query separately, and check `error`.
 - `src/lib/branding.ts`: logo storage paths and signed URLs; `(app)/layout.tsx` injects the
   organisation's accent colour.
 

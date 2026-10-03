@@ -17,9 +17,12 @@ import {
   createCustomer,
   createOrder,
   createLoad,
+  createPod,
   createSettings,
+  uploadPodFile,
   type CustomerFixture,
   type LoadFixture,
+  type PodFixture,
   type OrderFixture,
   type SettingsFixture,
 } from "./fixtures";
@@ -42,6 +45,7 @@ let orderA: OrderFixture;
 let orderB: OrderFixture;
 let loadA: LoadFixture;
 let loadB: LoadFixture;
+let podA: PodFixture;
 const fileA = () => `${orgA.id}/documents/delivery-note.txt`;
 
 beforeAll(async () => {
@@ -64,6 +68,7 @@ beforeAll(async () => {
     createLoad(orgA.admin.client, settingsA, orderA),
     createLoad(orgB.admin.client, settingsB, orderB),
   ]);
+  podA = await createPod(orgA.admin.client, "alpha", settingsA, customerA);
 
   const { data, error } = await orgA.admin.client
     .rpc("create_invitation", { invite_email: "pending@example.test", invite_role: "office" })
@@ -587,5 +592,45 @@ describe("pick sheets can't be ticked across organisations", () => {
     });
     expect(insert.error).not.toBeNull();
     expect(await snapshot("pick_lines", "organisation_id")).toEqual(before);
+  });
+});
+
+describe("proof of delivery can't be recorded or seen across organisations", () => {
+  it("B can't record a POD on A's stop, even with a file in its own folder", async () => {
+    const before = await snapshot("pods", "organisation_id");
+    const signature = await uploadPodFile(orgB.admin.client, loadB.stopId, "signature.png");
+    for (const client of [orgB.admin.client, member(orgB, "planner").client]) {
+      const { error } = await client.rpc("record_pod", {
+        client_id: crypto.randomUUID(),
+        target_stop: podA.stopId,
+        outcome: "failed",
+        failure_reason: "refused",
+        note: "Hijacked",
+        signature_path: signature,
+      });
+      expect(error).not.toBeNull();
+    }
+    expect(await snapshot("pods", "organisation_id")).toEqual(before);
+  });
+
+  it("B can't replay A's submission or put A's order back to plan", async () => {
+    const { data: pod } = await service
+      .from("pods")
+      .select("client_id")
+      .eq("id", podA.podId)
+      .single();
+    const replay = await orgB.admin.client.rpc("record_pod", {
+      client_id: pod!.client_id,
+      target_stop: loadB.stopId,
+      outcome: "failed",
+      failure_reason: "refused",
+      note: "Replayed",
+    });
+    // Not handed A's POD id.
+    expect(replay.data).not.toBe(podA.podId);
+    const replan = await orgB.admin.client.rpc("replan_failed_order", {
+      target_order: podA.orderId,
+    });
+    expect(replan.error).not.toBeNull();
   });
 });

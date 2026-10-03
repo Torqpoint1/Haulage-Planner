@@ -7,7 +7,8 @@ import { Button } from "./button";
 
 export const DialogClose = DialogPrimitive.Close;
 
-export const overlayClasses = "fixed inset-0 z-40 bg-overlay";
+// Same layer as side panels; opened later, a modal stacks above the panel it came from.
+export const overlayClasses = "fixed inset-0 z-50 bg-overlay";
 
 type ModalProps = {
   open?: boolean;

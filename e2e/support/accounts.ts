@@ -9,6 +9,44 @@ const env = localSupabase();
 const options = { auth: { persistSession: false, autoRefreshToken: false } } as const;
 const service = createClient(env.apiUrl, env.secretKey, options);
 
+/** Today's driver run as stored: for checking what reached the database, never for arranging UI state. */
+export async function driverRunRecords() {
+  // Each run creates its own demo company; the newest is this run's.
+  const { data: org } = await service
+    .from("organisations")
+    .select("id")
+    .eq("name", "Example Doors Ltd")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single();
+  const { data: orders, error } = await service
+    .from("orders")
+    .select("id, order_ref, status")
+    .eq("organisation_id", org!.id)
+    .like("order_ref", "DR-4%")
+    .order("order_ref");
+  if (error) throw error;
+  const { data: links } = await service
+    .from("stop_orders")
+    .select("stop_id")
+    .in(
+      "order_id",
+      (orders ?? []).map((o) => o.id),
+    );
+  const stopIds = (links ?? []).map((l) => l.stop_id as string);
+  const { data: pods } = stopIds.length
+    ? await service
+        .from("pods")
+        .select("stop_id, outcome, photo_paths, signature_path")
+        .in("stop_id", stopIds)
+    : { data: [] };
+  const { data: stop } = stopIds.length
+    ? await service.from("load_stops").select("load_id").eq("id", stopIds[0]).single()
+    : { data: null };
+  const loadId = stop?.load_id as string | undefined;
+  return { orders: orders ?? [], pods: pods ?? [], loadId };
+}
+
 export function uniqueEmail(label: string) {
   return `${label}-${randomUUID().slice(0, 8)}@example.test`;
 }
@@ -50,12 +88,14 @@ export async function createCompany(
       invite_token: data.token,
     });
     if (acceptError) throw acceptError;
-    created[m.role] = user.email;
+    // The first member with a role is the one tests sign in as.
+    created[m.role] ??= user.email;
   }
   await seedSettings(admin.client);
   await seedCustomers(admin.client);
   await seedOrders(admin.client);
   await seedPlanning(admin.client);
+  await seedDriverRun(admin.client);
   return { adminEmail: admin.email, members: created };
 }
 
@@ -679,4 +719,100 @@ async function seedPlanning(client: Client) {
     ["Gareth Morgan"],
   );
   await load({ load_date: d2, vehicle_id: vehicle("Luton 1"), crew_size: 1 }, ["PL-307"]);
+}
+
+/**
+ * Today's run for the "Dan Driver" login (spec 9.8): a confirmed Luton with
+ * three drops. Orders are DR-4xx. Today may be a weekend; drivers work then too.
+ */
+async function seedDriverRun(client: Client) {
+  const today = isoInDays(0);
+  const [
+    { data: members },
+    { data: units },
+    { data: vehicles },
+    { data: depots },
+    { data: sites },
+  ] = await Promise.all([
+    client.from("memberships").select("user_id, profile:profiles(full_name)").eq("role", "driver"),
+    client.from("unit_types").select("id, short_code"),
+    client.from("vehicles").select("id, name"),
+    client.from("depots").select("id").eq("is_default", true),
+    client.from("sites").select("id, customer_id, name"),
+  ]);
+  const login = (members ?? []).find(
+    (m) => (m.profile as unknown as { full_name: string } | null)?.full_name === "Dan Driver",
+  );
+  if (!login) return;
+  const unit = (code: string) => units!.find((u) => u.short_code === code)!.id;
+  const site = (name: string) => sites!.find((x) => x.name === name)!;
+  const [driverId] = await insert(client, "drivers", [
+    {
+      name: "Dan Driver",
+      phone: "07700 900777",
+      licence_categories: ["B", "C1"],
+      available_days: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+      user_id: login.user_id,
+    },
+  ]);
+  const order = (ref: string, siteName: string, lines: [string, number, number][], extra = {}) => ({
+    order: {
+      customer_id: site(siteName).customer_id,
+      site_id: site(siteName).id,
+      order_ref: ref,
+      customer_po: `PO-${ref.slice(3)}`,
+      required_date: today,
+      readiness: "ready",
+      ...extra,
+    },
+    lines: lines.map(([code, quantity, weight]) => ({
+      unit_type_id: unit(code),
+      quantity,
+      weight_per_unit_kg: weight,
+    })),
+  });
+  const { error } = await client.rpc("import_orders", {
+    orders: [
+      order("DR-401", "Stroud yard", [["DP", 2, 140]], {
+        delivery_instructions: "Use the side gate; goods-in is behind the timber store.",
+      }),
+      order("DR-402", "Gloucester workshop", [
+        ["DP", 3, 140],
+        ["EUR", 1, 200],
+      ]),
+      order("DR-403", "Plot 14, Meadow View", [["DP", 2, 140]]),
+    ],
+  });
+  if (error) throw new Error(`driver run orders: ${error.message}`);
+  const { data: saved } = await client
+    .from("orders")
+    .select("id, order_ref")
+    .like("order_ref", "DR-4%")
+    .order("order_ref");
+  const [loadId] = await insert(client, "loads", [
+    {
+      load_date: today,
+      depot_id: depots![0].id,
+      vehicle_id: vehicles!.find((v) => v.name === "Luton 1")!.id,
+      start_time: "07:00",
+    },
+  ]);
+  for (const o of saved!) {
+    const { error: addError } = await client.rpc("add_order_to_load", {
+      target_load: loadId,
+      target_order: o.id,
+    });
+    if (addError) throw new Error(`add ${o.order_ref}: ${addError.message}`);
+  }
+  await insert(client, "load_drivers", [{ load_id: loadId, driver_id: driverId }]);
+  const { data: stops } = await client
+    .from("load_stops")
+    .select("id, sequence")
+    .eq("load_id", loadId)
+    .order("sequence");
+  await client
+    .from("load_stops")
+    .update({ booking_slot: "10:30", booking_ref: "GL-2231" })
+    .eq("id", stops![1].id);
+  await client.from("loads").update({ status: "confirmed" }).eq("id", loadId);
 }

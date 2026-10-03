@@ -348,6 +348,20 @@ for (const theme of THEMES) {
             path: `screenshots/${theme}/${width}/driver.png`,
             fullPage: true,
           });
+          // The record form, while today's run still has stops to do (driver.spec records them).
+          const record = page
+            .getByRole("article", { name: /^Stop 2: / })
+            .getByRole("button", { name: "Part delivered" });
+          if (await record.count()) {
+            await record.click();
+            const sheet = page.getByRole("dialog");
+            await expect(sheet.getByRole("radio", { name: "Part delivered" })).toBeVisible();
+            await settle(page);
+            await page.screenshot({ path: `screenshots/${theme}/${width}/driver-record.png` });
+            await sheet.getByRole("radio", { name: "Failed" }).click();
+            await page.screenshot({ path: `screenshots/${theme}/${width}/driver-failed.png` });
+            await page.keyboard.press("Escape");
+          }
           await page.goto("/settings");
           await expect(
             page.getByRole("heading", { name: "You don't have access to that page" }),

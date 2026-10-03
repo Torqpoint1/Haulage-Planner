@@ -20,6 +20,8 @@ setup("create the demo company and sign in", async ({ page, browser }) => {
     { name: "Olivia Office", role: "office" },
     { name: "Will Warehouse", role: "warehouse" },
     { name: "Dan Driver", role: "driver" },
+    // Not linked to a driver yet: the settings test links this login.
+    { name: "Rhys Relief", role: "driver" },
   ]);
   writeFileSync(`${AUTH_DIR}/company.json`, JSON.stringify(company, null, 2));
 
