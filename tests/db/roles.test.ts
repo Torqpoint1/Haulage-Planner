@@ -505,6 +505,38 @@ describe("orders: planners edit, office staff view and see history (spec 3, 9.3)
   });
 });
 
+describe("deletion requests (spec 12)", () => {
+  it("only admins can see, make or cancel a request, and nobody can delete one", async () => {
+    for (const role of NON_ADMINS) {
+      const client = member(org, role).client;
+      const { error } = await client.from("deletion_requests").insert({ reason: "Not mine" });
+      expect(error, role).not.toBeNull();
+    }
+    const admin = org.admin.client;
+    const { data: made, error } = await admin
+      .from("deletion_requests")
+      .insert({ reason: "Closing down" })
+      .select("id")
+      .single();
+    expect(error).toBeNull();
+    // Only one open request at a time.
+    const again = await admin.from("deletion_requests").insert({ reason: "Twice" });
+    expect(again.error?.code).toBe("23505");
+    for (const role of NON_ADMINS) {
+      const { data } = await member(org, role).client.from("deletion_requests").select("id");
+      expect(data, role).toEqual([]);
+    }
+    await admin.from("deletion_requests").delete().eq("id", made!.id);
+    const { data: still } = await service.from("deletion_requests").select("id").eq("id", made!.id);
+    expect(still).toHaveLength(1);
+    const cancel = await admin
+      .from("deletion_requests")
+      .update({ status: "cancelled", cancelled_at: new Date().toISOString() })
+      .eq("id", made!.id);
+    expect(cancel.error).toBeNull();
+  });
+});
+
 describe("customer import (spec 11)", () => {
   const site = (name: string, postcode: string) => ({
     name,

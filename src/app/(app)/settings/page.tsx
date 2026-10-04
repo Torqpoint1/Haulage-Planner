@@ -90,9 +90,10 @@ const SECTIONS: { title: string; description: string; icon: LucideIcon; href?: s
     href: "/settings/compliance-zones",
   },
   {
-    title: "Import/export",
-    description: "Bring data in from spreadsheets, or export it all.",
+    title: "Your data",
+    description: "Import from spreadsheets, export everything, privacy and deletion.",
     icon: FileUp,
+    href: "/settings/data",
   },
 ];
 

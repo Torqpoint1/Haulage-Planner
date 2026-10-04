@@ -31,7 +31,15 @@ Build in the stages of spec section 14, in order, and only start a stage once th
   `parseVehicle`; existing registrations rejected). Capacities are set per vehicle afterwards.
   Customer page Orders tab (`customer-orders.tsx`): open orders by date, then delivered and
   cancelled, latest 100, linking to each order and to Orders filtered by the account ref.
-- Not yet: emailed invitations and password reset (need Resend); GDPR export/deletion.
+  Settings → Your data (`/settings/data`, admins): import links; "Download all data (JSON)"
+  (`settings/data/export/route.ts` → `lib/data-protection/export.ts`, read under the admin's RLS,
+  files as 7-day signed links; `tables.ts` lists every org table and `tests/db/schema.test.ts`
+  fails if a new one is missing); privacy notice / data processing terms links from
+  `PRIVACY_NOTICE_URL` / `DATA_PROCESSING_TERMS_URL` ("Not published yet" until set; the privacy
+  link also shows on sign-up); deletion request with typed confirmation (`deletion_requests`,
+  admins only, one open at a time, cancellable). Decision (mine): the app records the request and
+  the operator deletes after 30 days; nothing is deleted automatically.
+- Not yet: emailed invitations and password reset (need Resend).
 - Next: all stages in spec section 14 are built. Remaining: the "Not yet" items and a hosted
   Supabase project.
 - Open: no hosted Supabase project yet. postcodes.io and OpenRouteService are blocked by this

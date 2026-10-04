@@ -1,0 +1,46 @@
+/** Which tables the data export includes; tests/db/schema.test.ts keeps this complete. */
+
+/** Every organisation table, in an order that reads naturally. */
+export const EXPORT_TABLES = [
+  "depots",
+  "memberships",
+  "invitations",
+  "unit_types",
+  "vehicles",
+  "vehicle_capacities",
+  "drivers",
+  "hauliers",
+  "postcode_zones",
+  "rate_cards",
+  "rate_card_pallet_prices",
+  "rate_card_load_prices",
+  "compliance_zones",
+  "customers",
+  "sites",
+  "contacts",
+  "orders",
+  "order_lines",
+  "order_attachments",
+  "quote_requests",
+  "quote_request_orders",
+  "loads",
+  "load_drivers",
+  "load_stops",
+  "stop_orders",
+  "warning_overrides",
+  "pick_lines",
+  "pods",
+  "pod_lines",
+  "assets",
+  "asset_movements",
+  "stop_assets",
+  "standing_runs",
+  "standing_run_sites",
+  "standing_run_days",
+  "csv_import_mappings",
+  "deletion_requests",
+  "audit_log",
+] as const;
+
+/** Lookup caches rebuilt from public services; not the organisation's own data. */
+export const CACHE_TABLES = ["postcode_lookups", "route_legs"] as const;

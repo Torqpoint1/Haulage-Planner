@@ -83,6 +83,8 @@ beforeAll(async () => {
     .single<{ invitation_id: string; token: string }>();
   if (error) throw error;
   inviteA = { id: data.invitation_id, token: data.token };
+  const deletion = await orgA.admin.client.from("deletion_requests").insert({ reason: "Fixture" });
+  if (deletion.error) throw deletion.error;
 
   const upload = await orgA.admin.client.storage
     .from("organisation-files")
@@ -100,6 +102,7 @@ const TABLES: { table: string; orgColumn: string; patch: Record<string, unknown>
   ...CUSTOMER_TABLES.map((t) => ({ ...t, orgColumn: "organisation_id" })),
   ...ORDER_TABLES.map((t) => ({ ...t, orgColumn: "organisation_id" })),
   ...PLANNING_TABLES.map((t) => ({ ...t, orgColumn: "organisation_id" })),
+  { table: "deletion_requests", orgColumn: "organisation_id", patch: { reason: "Hijacked" } },
 ];
 
 /** Clients that must never see Organisation A's data. */

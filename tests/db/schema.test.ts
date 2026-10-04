@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CACHE_TABLES, EXPORT_TABLES } from "@/lib/data-protection/tables";
 import { sql } from "./helpers";
 
 /**
@@ -76,5 +77,13 @@ describe("database guards", () => {
         and not exists (select 1 from unnest(p.proconfig) c where c like 'search_path=%')
     `);
     expect(unsafe).toEqual([]);
+  });
+
+  it("the data export includes every organisation table (spec 12)", () => {
+    const orgTables = tables
+      .map((t) => t.table_name)
+      .filter((t) => has(t, "organisation_id"))
+      .sort();
+    expect([...EXPORT_TABLES, ...CACHE_TABLES].sort()).toEqual(orgTables);
   });
 });

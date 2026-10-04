@@ -14,6 +14,7 @@ const SETTINGS_SCREENS = [
   ["/settings/standing-runs", "Standing runs"],
   ["/settings/thresholds", "Warning thresholds"],
   ["/settings/compliance-zones", "Compliance zones"],
+  ["/settings/data", "Your data"],
 ] as const;
 
 /**

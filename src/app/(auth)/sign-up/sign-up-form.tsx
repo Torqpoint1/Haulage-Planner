@@ -15,7 +15,16 @@ import { createClient } from "@/lib/supabase/client";
 
 type Values = { fullName: string; email: string; password: string };
 
-export function SignUpForm({ next, defaultEmail }: { next: string; defaultEmail: string }) {
+export function SignUpForm({
+  next,
+  defaultEmail,
+  privacyUrl,
+}: {
+  next: string;
+  defaultEmail: string;
+  /** The published privacy notice, once there is one (spec 12). */
+  privacyUrl?: string;
+}) {
   const router = useRouter();
   const [errors, setErrors] = useState<FieldErrors<Values>>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -105,6 +114,19 @@ export function SignUpForm({ next, defaultEmail }: { next: string; defaultEmail:
           Create account
         </Button>
       </form>
+      {privacyUrl ? (
+        <p className="mt-4 text-center text-xs text-text-muted">
+          How we use your data:{" "}
+          <a
+            href={privacyUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium text-accent-text underline underline-offset-2"
+          >
+            privacy notice
+          </a>
+        </p>
+      ) : null}
       <p className="mt-6 text-center text-sm text-text-muted">
         Already have an account?{" "}
         <Link
