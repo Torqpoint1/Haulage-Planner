@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expectNoOverflow } from "./helpers";
 
 /**
  * Stage 3 "Done when": site restrictions are fully captured, a postcode places
@@ -279,6 +280,21 @@ test("deleting a site and a customer asks first", async ({ page }) => {
   await confirmDelete("Cardiff Bay Interiors");
   await expect(page.getByRole("heading", { level: 1, name: "Customers" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Cardiff Bay Interiors" })).toHaveCount(0);
+});
+
+test("the customer's Orders tab lists their orders and links to each", async ({ page }) => {
+  await page.goto("/customers");
+  await page.getByLabel("Search customers").fill("Hillside");
+  await page.getByRole("link", { name: "Hillside Builders" }).first().click();
+  await page.getByRole("tab", { name: /Orders/ }).click();
+  const open = page.getByRole("list", { name: "Open orders" });
+  const order = open.getByRole("listitem").filter({ hasText: "SO-24101" });
+  await expect(order).toContainText("Stroud yard");
+  await expect(order).toContainText("6 DP · 4 LL");
+  await expect(page.getByRole("listitem").filter({ hasText: "SO-24102" })).toHaveCount(0);
+  await expectNoOverflow(page);
+  await order.getByRole("link", { name: "SO-24101" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "SO-24101" })).toBeVisible();
 });
 
 test.describe("office staff", () => {

@@ -4,7 +4,7 @@ import { AssetStatusBadge } from "@/components/assets/asset-status";
 import type { AssetRow } from "@/lib/assets/data";
 import { formatIsoDate, plural } from "@/lib/format";
 
-import { Boxes, ClipboardList, Contact as ContactIcon, MapPin, Pencil, Trash2 } from "lucide-react";
+import { Boxes, Contact as ContactIcon, MapPin, Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
@@ -36,6 +36,7 @@ import {
   type SiteSaveState,
 } from "../actions";
 import { CustomerFields } from "../customer-fields";
+import { CustomerOrders, type CustomerOrder } from "./customer-orders";
 import { SiteFields } from "./site-fields";
 
 type Props = {
@@ -48,6 +49,7 @@ type Props = {
   /** Returnable assets at this customer's sites. */
   assets: AssetRow[];
   canSeeAssets: boolean;
+  orders: { rows: CustomerOrder[]; total: number; canSee: boolean; canEdit: boolean };
 };
 
 export function CustomerView({
@@ -59,6 +61,7 @@ export function CustomerView({
   initialTab,
   assets,
   canSeeAssets,
+  orders,
 }: Props) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -201,7 +204,9 @@ export function CustomerView({
           <TabsTrigger value="contacts" count={contacts.length}>
             Contacts
           </TabsTrigger>
-          <TabsTrigger value="orders">Orders</TabsTrigger>
+          <TabsTrigger value="orders" count={orders.total}>
+            Orders
+          </TabsTrigger>
           <TabsTrigger value="assets">Assets</TabsTrigger>
           <TabsTrigger value="notes">Notes</TabsTrigger>
         </TabsList>
@@ -310,13 +315,13 @@ export function CustomerView({
         </TabsContent>
 
         <TabsContent value="orders">
-          <Card>
-            <EmptyState
-              icon={ClipboardList}
-              title="No orders for this customer yet"
-              description="Their orders will be listed here with their delivery dates and status."
-            />
-          </Card>
+          <CustomerOrders
+            orders={orders.rows}
+            total={orders.total}
+            search={customer.account_ref || customer.name}
+            canSeeOrders={orders.canSee}
+            canEditOrders={orders.canEdit}
+          />
         </TabsContent>
 
         <TabsContent value="assets">

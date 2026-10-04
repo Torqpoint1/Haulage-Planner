@@ -120,6 +120,8 @@ for (const theme of THEMES) {
         await shot("customer");
         await page.getByRole("tab", { name: /Contacts/ }).click();
         await shot("customer-contacts");
+        await page.getByRole("tab", { name: /Orders/ }).click();
+        await shot("customer-orders");
 
         await page.getByRole("tab", { name: /Sites/ }).click();
         await page.getByRole("link", { name: "Newport depot" }).first().click();

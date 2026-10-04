@@ -25,11 +25,12 @@ Build in the stages of spec section 14, in order, and only start a stage once th
   vehicle cost = the running-cost estimate (est.); "drops" counts every stop attempted, failed
   ones included; cost per drop divides priced loads' cost by their drops, with unpriced loads
   flagged; the agreed price clears when the vehicle or haulier changes.
-- Deferred: customer page Orders tab.
 - After Stage 10 ("just keep going"): CSV import for customers/sites (`/customers/import`, one row
   per site, grouped into customers by account ref or name; existing customers get new sites;
   postcodes are placed on the map) and vehicles (`/settings/vehicles/import`, each row checked by
   `parseVehicle`; existing registrations rejected). Capacities are set per vehicle afterwards.
+  Customer page Orders tab (`customer-orders.tsx`): open orders by date, then delivered and
+  cancelled, latest 100, linking to each order and to Orders filtered by the account ref.
 - Not yet: emailed invitations and password reset (need Resend); GDPR export/deletion.
 - Next: all stages in spec section 14 are built. Remaining: the "Not yet" items and a hosted
   Supabase project.
