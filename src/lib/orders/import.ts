@@ -1,6 +1,12 @@
 import type { CsvTable } from "@/lib/csv";
 import { formatLocalDate, parseUkDate } from "@/lib/format";
 import { normalisePostcode } from "@/lib/postcode";
+import {
+  MAX_IMPORT_ROWS,
+  missingFields,
+  suggestFieldMapping,
+  type ImportField,
+} from "@/lib/import/mapping";
 import type { Readiness, Urgency } from "./options";
 
 /**
@@ -9,17 +15,8 @@ import type { Readiness, Urgency } from "./options";
  * sharing an order ref are lines of the same order).
  */
 
-/** Larger files should be split; keeps a single import quick and the preview readable. */
-export const MAX_IMPORT_ROWS = 5000;
-
-export type ImportField = {
-  key: string;
-  label: string;
-  required?: boolean;
-  hint?: string;
-  /** Header names this field is recognised by when suggesting a mapping. */
-  aliases: string[];
-};
+export { MAX_IMPORT_ROWS };
+export type { ImportField };
 
 export const ORDER_IMPORT_FIELDS = [
   {
@@ -153,52 +150,22 @@ export type FieldKey = (typeof ORDER_IMPORT_FIELDS)[number]["key"];
 /** Field → CSV header. */
 export type Mapping = Partial<Record<FieldKey, string>>;
 
+/**
+ * Suggest which column holds each field: the organisation's remembered mapping
+ * first (where those headers still exist), then exact names and aliases, then
+ * headers that contain a field's name.
+ */
 const norm = (s: string) =>
   s
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 
-/**
- * Suggest which column holds each field: the organisation's remembered mapping
- * first (where those headers still exist), then exact names and aliases, then
- * headers that contain a field's name.
- */
-export function suggestMapping(headers: string[], remembered: Mapping = {}): Mapping {
-  const out: Mapping = {};
-  const used = new Set<string>();
-  const take = (key: FieldKey, header: string | undefined) => {
-    if (header && !used.has(header) && !out[key]) {
-      out[key] = header;
-      used.add(header);
-    }
-  };
-  for (const f of ORDER_IMPORT_FIELDS) {
-    const r = remembered[f.key];
-    if (r && headers.includes(r)) take(f.key, r);
-  }
-  for (const f of ORDER_IMPORT_FIELDS) {
-    const names = [f.key, f.label, ...f.aliases].map(norm);
-    take(
-      f.key,
-      headers.find((h) => names.includes(norm(h)) && !used.has(h)),
-    );
-  }
-  for (const f of ORDER_IMPORT_FIELDS) {
-    const label = norm(f.label);
-    take(
-      f.key,
-      headers.find((h) => !used.has(h) && norm(h).includes(label)),
-    );
-  }
-  return out;
-}
+export const suggestMapping = (headers: string[], remembered: Mapping = {}): Mapping =>
+  suggestFieldMapping(ORDER_IMPORT_FIELDS, headers, remembered) as Mapping;
 
-export function missingRequired(mapping: Mapping): string[] {
-  return ORDER_IMPORT_FIELDS.filter((f) => "required" in f && f.required && !mapping[f.key]).map(
-    (f) => f.label,
-  );
-}
+export const missingRequired = (mapping: Mapping): string[] =>
+  missingFields(ORDER_IMPORT_FIELDS, mapping);
 
 export type ImportLookups = {
   customers: { id: string; name: string; account_ref: string }[];
@@ -588,3 +555,31 @@ export function planOrderImport(
 
 /** Today's date in the format the template uses, for example rows. */
 export const exampleDate = () => formatLocalDate(new Date(Date.now() + 3 * 86_400_000));
+
+/** Wording and template for the order import wizard (spec 11). */
+export function orderImportCopy() {
+  const when = formatLocalDate(new Date(Date.now() + 3 * 86_400_000));
+  const example: Record<string, string> = {
+    order_ref: "SO-1001",
+    customer: "Your customer's name or account ref",
+    site: "GL1 2BB",
+    customer_po: "PO-5521",
+    required_date: when,
+    urgency: "Standard",
+    readiness: "Ready",
+    unit_type: "Your unit type's code",
+    quantity: "4",
+  };
+  return {
+    noun: ["order", "orders"] as [string, string],
+    fields: ORDER_IMPORT_FIELDS,
+    refLabel: "Order ref",
+    fileHint: "One row per order line; rows with the same order ref become one order.",
+    needHint: "You need an order ref, customer, required date, unit type and quantity.",
+    templateName: "order-import-template.csv",
+    templateRows: [example, { ...example, unit_type: "Another unit type's code", quantity: "1" }],
+    problemsName: "order-import-problems",
+    doneHref: "/orders",
+    doneLabel: "View orders",
+  };
+}

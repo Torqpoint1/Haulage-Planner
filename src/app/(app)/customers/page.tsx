@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
+import { Upload } from "lucide-react";
+import Link from "next/link";
 import { connection } from "next/server";
+import { Button } from "@/components/ui/button";
 import { PageContainer, PageHeader } from "@/components/shell/page";
 import { can } from "@/lib/auth/roles";
 import { requireArea } from "@/lib/auth/session";
@@ -47,6 +50,16 @@ export default async function CustomersPage() {
       <PageHeader
         title="Customers"
         description="Customers, their delivery sites, contacts and site restrictions."
+        actions={
+          can(session.membership.role, "customers.edit") ? (
+            <Button asChild>
+              <Link href="/customers/import">
+                <Upload aria-hidden />
+                Import CSV
+              </Link>
+            </Button>
+          ) : null
+        }
       />
       <CustomersManager rows={rows} canEdit={can(session.membership.role, "customers.edit")} />
     </PageContainer>

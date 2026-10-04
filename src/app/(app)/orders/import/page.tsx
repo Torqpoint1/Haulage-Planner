@@ -4,9 +4,10 @@ import { SettingsHeader } from "@/components/settings/settings-header";
 import { PageContainer } from "@/components/shell/page";
 import { can } from "@/lib/auth/roles";
 import { requireArea } from "@/lib/auth/session";
-import type { Mapping } from "@/lib/orders/import";
+import { ImportWizard } from "@/components/import/import-wizard";
+import { orderImportCopy, type Mapping } from "@/lib/orders/import";
 import { createClient } from "@/lib/supabase/server";
-import { ImportWizard } from "./import-wizard";
+import { previewOrderImport, runOrderImport } from "../actions";
 
 export const metadata: Metadata = { title: "Import orders" };
 
@@ -27,7 +28,12 @@ export default async function ImportOrdersPage() {
         backLabel="Orders"
         description="Upload a CSV from your order system or a spreadsheet. Nothing is saved until you've checked it."
       />
-      <ImportWizard remembered={(data?.mapping ?? {}) as Mapping} />
+      <ImportWizard
+        copy={orderImportCopy()}
+        remembered={(data?.mapping ?? {}) as Mapping}
+        preview={previewOrderImport}
+        run={runOrderImport}
+      />
     </PageContainer>
   );
 }

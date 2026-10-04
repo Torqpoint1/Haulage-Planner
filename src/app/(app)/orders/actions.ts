@@ -1,6 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import type { ImportPreview } from "@/components/import/import-wizard";
+import type { FieldMapping, ImportProblem } from "@/lib/import/mapping";
 import { z } from "zod";
 import type { CsvTable } from "@/lib/csv";
 import {
@@ -216,12 +218,9 @@ async function importLookups() {
   };
 }
 
-type PreviewResult =
-  | {
-      ok: true;
-      plan: Pick<ImportPlan, "rejected" | "lineCount"> & { orderCount: number; rowCount: number };
-    }
-  | { ok: false; error: string };
+type PreviewResult = { ok: true; preview: ImportPreview } | { ok: false; error: string };
+const asProblems = (rows: ImportPlan["rejected"]): ImportProblem[] =>
+  rows.map((r) => ({ row: r.row, ref: r.orderRef, errors: r.errors }));
 
 function checkTable(table: CsvTable, mapping: Mapping): string | null {
   if (!table.rows.length) return "That file has no rows under the header.";
@@ -236,7 +235,7 @@ function checkTable(table: CsvTable, mapping: Mapping): string | null {
 /** Check every row on the server (the authority) and say what would happen. */
 export async function previewOrderImport(
   table: CsvTable,
-  mapping: Mapping,
+  mapping: FieldMapping,
 ): Promise<PreviewResult> {
   const result = await edit(async () => {
     const problem = checkTable(table, mapping);
@@ -245,10 +244,10 @@ export async function previewOrderImport(
     const plan = planOrderImport(table, mapping, lookups);
     return {
       ok: true as const,
-      plan: {
-        rejected: plan.rejected,
-        lineCount: plan.lineCount,
-        orderCount: plan.orders.length,
+      preview: {
+        rejected: asProblems(plan.rejected),
+        extra: { label: "Order lines", value: plan.lineCount },
+        count: plan.orders.length,
         rowCount: plan.rows.length,
       },
     };
@@ -259,9 +258,9 @@ export async function previewOrderImport(
 /** Import the valid orders (re-checked now, in case anything changed) and remember the mapping. */
 export async function runOrderImport(
   table: CsvTable,
-  mapping: Mapping,
+  mapping: FieldMapping,
 ): Promise<
-  { ok: true; imported: number; rejected: ImportPlan["rejected"] } | { ok: false; error: string }
+  { ok: true; imported: number; rejected: ImportProblem[] } | { ok: false; error: string }
 > {
   const result = await edit(async () => {
     const problem = checkTable(table, mapping);
@@ -290,7 +289,7 @@ export async function runOrderImport(
       imported += data as number;
     }
     refresh();
-    return { ok: true as const, imported, rejected: plan.rejected };
+    return { ok: true as const, imported, rejected: asProblems(plan.rejected) };
   });
   return result as Awaited<ReturnType<typeof runOrderImport>>;
 }

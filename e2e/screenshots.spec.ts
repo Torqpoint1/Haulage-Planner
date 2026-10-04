@@ -192,6 +192,28 @@ for (const theme of THEMES) {
         await page.getByRole("button", { name: /^Check/ }).click();
         await expect(page.getByText("Problem rows", { exact: true })).toBeVisible();
         await shot("orders-import-check");
+
+        await page.goto("/settings/vehicles/import");
+        await expect(async () => {
+          await page.getByLabel("Choose a CSV file").setInputFiles({
+            name: "fleet.csv",
+            mimeType: "text/csv",
+            buffer: Buffer.from(
+              [
+                "Name,Reg,Type,Deck length,Deck width,Deck height,Payload,GVW,Overall length",
+                "Shot van,SH70 VAN,van,3400,1750,1900,1200,3500,5.9",
+                "Shot dup,WX21 KLM,juggernaut,3400,1750,1900,4000,3500,5.9",
+              ].join("\n"),
+            ),
+          });
+          await expect(page.getByRole("heading", { name: "Match your columns" })).toBeVisible({
+            timeout: 2_000,
+          });
+        }).toPass();
+        await shot("vehicles-import-map");
+        await page.getByRole("button", { name: /^Check/ }).click();
+        await expect(page.getByText("Problem rows", { exact: true })).toBeVisible();
+        await shot("vehicles-import-check");
       });
 
       test("plan screens", async ({ page }) => {

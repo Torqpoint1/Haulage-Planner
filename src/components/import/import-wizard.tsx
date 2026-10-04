@@ -14,23 +14,62 @@ import { DataTable, type Column } from "@/components/ui/table";
 import { Truncate } from "@/components/ui/truncate";
 import { parseCsv, type CsvTable } from "@/lib/csv";
 import { downloadCsv } from "@/lib/download";
-import { formatIsoDate, formatNumber, londonToday, plural } from "@/lib/format";
+import { formatNumber, londonToday, plural } from "@/lib/format";
 import {
-  exampleDate,
   MAX_IMPORT_ROWS,
-  missingRequired,
-  ORDER_IMPORT_FIELDS,
-  suggestMapping,
-  type Mapping,
-  type RowResult,
-} from "@/lib/orders/import";
-import { previewOrderImport, runOrderImport } from "../actions";
+  missingFields,
+  suggestFieldMapping,
+  type FieldMapping,
+  type ImportField,
+  type ImportProblem,
+} from "@/lib/import/mapping";
+
+/** What an import is called and what it needs: plain data, so a server page can pass it. */
+export type ImportCopy = {
+  /** Singular and plural, e.g. ["order", "orders"]. */
+  noun: [string, string];
+  fields: readonly ImportField[];
+  /** Heading for the problem rows' identifying column, e.g. "Order ref". */
+  refLabel: string;
+  /** Under the drop zone, e.g. how rows become records. */
+  fileHint: string;
+  /** "Not sure what to include?" text. */
+  needHint: string;
+  templateName: string;
+  templateRows: Record<string, string>[];
+  problemsName: string;
+  doneHref: string;
+  doneLabel: string;
+};
+
+export type ImportPreview = {
+  rowCount: number;
+  /** Records that will be created. */
+  count: number;
+  /** A second figure worth showing, e.g. order lines or new customers. */
+  extra?: { label: string; value: number };
+  rejected: ImportProblem[];
+};
+
+export type PreviewAction = (
+  table: CsvTable,
+  mapping: FieldMapping,
+) => Promise<{ ok: true; preview: ImportPreview } | { ok: false; error: string }>;
+export type RunAction = (
+  table: CsvTable,
+  mapping: FieldMapping,
+) => Promise<
+  { ok: true; imported: number; rejected: ImportProblem[] } | { ok: false; error: string }
+>;
+
+type Mapping = FieldMapping;
+type RowResult = ImportProblem;
 
 const NONE = "__none";
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const SHOWN_PROBLEMS = 200;
 
-type Preview = { rowCount: number; orderCount: number; lineCount: number; rejected: RowResult[] };
+type Preview = ImportPreview;
 type Step =
   | { name: "file" }
   | { name: "map" }
@@ -78,29 +117,11 @@ async function readText(file: File): Promise<string> {
   }
 }
 
-function downloadTemplate() {
-  const headers = ORDER_IMPORT_FIELDS.map((f) => f.label);
-  const when = formatIsoDate(exampleDate());
-  const example: Record<string, string> = {
-    order_ref: "SO-1001",
-    customer: "Your customer's name or account ref",
-    site: "GL1 2BB",
-    customer_po: "PO-5521",
-    required_date: when,
-    urgency: "Standard",
-    readiness: "Ready",
-    unit_type: "Your unit type's code",
-    quantity: "4",
-  };
-  const second: Record<string, string> = {
-    ...example,
-    unit_type: "Another unit type's code",
-    quantity: "1",
-  };
+function downloadTemplate(copy: ImportCopy) {
   downloadCsv(
-    "order-import-template.csv",
-    headers,
-    [example, second].map((row) => ORDER_IMPORT_FIELDS.map((f) => row[f.key] ?? "")),
+    copy.templateName,
+    copy.fields.map((f) => f.label),
+    copy.templateRows.map((row) => copy.fields.map((f) => row[f.key] ?? "")),
   );
 }
 
@@ -111,24 +132,24 @@ function trimmed(table: CsvTable, mapping: Mapping): CsvTable {
   return { headers, rows: table.rows.map((r) => idx.map((i) => r[i] ?? "")) };
 }
 
-function downloadProblems(table: CsvTable, rejected: RowResult[]) {
+function downloadProblems(table: CsvTable, rejected: RowResult[], name: string) {
   // Original columns plus the problem, so the file can be fixed and imported again.
   const byRow = new Map(rejected.map((r) => [r.row, r.errors.join(" ")]));
   const rows = table.rows
     .map((r, i) => ({ r, problem: byRow.get(i + 2) }))
     .filter((x) => x.problem)
     .map((x) => [...x.r, x.problem!]);
-  downloadCsv(`order-import-problems-${londonToday()}.csv`, [...table.headers, "Problem"], rows);
+  downloadCsv(`${name}-${londonToday()}.csv`, [...table.headers, "Problem"], rows);
 }
 
-const problemColumns: Column<RowResult>[] = [
+const problemColumns = (refLabel: string): Column<RowResult>[] => [
   {
     id: "row",
     header: "Row",
     cell: (r) => <span className="num">{r.row}</span>,
     className: "w-16",
   },
-  { id: "ref", header: "Order ref", cell: (r) => <Truncate>{r.orderRef || "–"}</Truncate> },
+  { id: "ref", header: refLabel, cell: (r) => <Truncate>{r.ref || "–"}</Truncate> },
   {
     id: "problem",
     header: "Problem",
@@ -136,14 +157,22 @@ const problemColumns: Column<RowResult>[] = [
   },
 ];
 
-function ProblemList({ rejected, table }: { rejected: RowResult[]; table: CsvTable }) {
+function ProblemList({
+  rejected,
+  table,
+  copy,
+}: {
+  rejected: RowResult[];
+  table: CsvTable;
+  copy: ImportCopy;
+}) {
   if (!rejected.length) return null;
   const shown = rejected.slice(0, SHOWN_PROBLEMS);
   return (
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
         <CardTitle>{plural(rejected.length, "row")} won&apos;t be imported</CardTitle>
-        <Button size="sm" onClick={() => downloadProblems(table, rejected)}>
+        <Button size="sm" onClick={() => downloadProblems(table, rejected, copy.problemsName)}>
           <Download aria-hidden />
           Download problem rows
         </Button>
@@ -155,7 +184,7 @@ function ProblemList({ rejected, table }: { rejected: RowResult[]; table: CsvTab
         </p>
         <DataTable
           label="Rows that won't be imported"
-          columns={problemColumns}
+          columns={problemColumns(copy.refLabel)}
           rows={shown}
           getRowId={(r) => String(r.row)}
           scrollClassName="max-h-panel"
@@ -163,7 +192,7 @@ function ProblemList({ rejected, table }: { rejected: RowResult[]; table: CsvTab
             <div className="flex min-w-0 flex-col gap-1 p-3">
               <span className="text-sm font-medium">
                 Row <span className="num">{r.row}</span>
-                {r.orderRef ? ` · ${r.orderRef}` : ""}
+                {r.ref ? ` · ${r.ref}` : ""}
               </span>
               <span className="text-sm break-words text-text-muted">{r.errors.join(" ")}</span>
             </div>
@@ -180,7 +209,18 @@ function ProblemList({ rejected, table }: { rejected: RowResult[]; table: CsvTab
   );
 }
 
-export function ImportWizard({ remembered }: { remembered: Mapping }) {
+export function ImportWizard({
+  copy,
+  remembered,
+  preview,
+  run,
+}: {
+  copy: ImportCopy;
+  remembered: Mapping;
+  preview: PreviewAction;
+  run: RunAction;
+}) {
+  const [one, many] = copy.noun;
   const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<Step>({ name: "file" });
@@ -201,7 +241,7 @@ export function ImportWizard({ remembered }: { remembered: Mapping }) {
     }
     const parsed = parseCsv(await readText(file));
     if (!parsed.headers.length) return setError("That file is empty.");
-    if (!parsed.rows.length) return setError("That file has a header row but no orders under it.");
+    if (!parsed.rows.length) return setError(`That file has a header row but no ${many} under it.`);
     if (parsed.rows.length > MAX_IMPORT_ROWS) {
       return setError(
         `That file has ${formatNumber(parsed.rows.length)} rows. Split it into files of ${formatNumber(MAX_IMPORT_ROWS)} or fewer.`,
@@ -209,23 +249,23 @@ export function ImportWizard({ remembered }: { remembered: Mapping }) {
     }
     setFileName(file.name);
     setTable(parsed);
-    setMapping(suggestMapping(parsed.headers, remembered));
+    setMapping(suggestFieldMapping(copy.fields, parsed.headers, remembered));
     setStep({ name: "map" });
   }
 
   function check() {
     setError(null);
     start(async () => {
-      const result = await previewOrderImport(trimmed(table, mapping), mapping);
+      const result = await preview(trimmed(table, mapping), mapping);
       if (!result.ok) return setError(result.error);
-      setStep({ name: "check", preview: result.plan });
+      setStep({ name: "check", preview: result.preview });
     });
   }
 
   function runImport() {
     setError(null);
     start(async () => {
-      const result = await runOrderImport(trimmed(table, mapping), mapping);
+      const result = await run(trimmed(table, mapping), mapping);
       if (!result.ok) return setError(result.error);
       setStep({ name: "done", imported: result.imported, rejected: result.rejected });
       router.refresh();
@@ -240,7 +280,7 @@ export function ImportWizard({ remembered }: { remembered: Mapping }) {
   }
 
   const current = { file: 0, map: 1, check: 2, done: 3 }[step.name];
-  const missing = missingRequired(mapping);
+  const missing = missingFields(copy.fields, mapping);
   const headerOptions = [
     { value: NONE, label: "Not in this file" },
     ...table.headers.map((h, i) => ({ value: h, label: h || `Column ${i + 1}` })),
@@ -305,17 +345,16 @@ export function ImportWizard({ remembered }: { remembered: Mapping }) {
                 Choose file
               </Button>
               <p className="text-xs text-text-muted">
-                Up to {formatNumber(MAX_IMPORT_ROWS)} rows. One row per order line; rows with the
-                same order ref become one order.
+                Up to {formatNumber(MAX_IMPORT_ROWS)} rows. {copy.fileHint}
               </p>
             </div>
             <div className="flex flex-col gap-2">
               <h2 className="text-sm font-semibold">Not sure what to include?</h2>
               <p className="text-sm text-text-muted">
-                You need an order ref, customer, required date, unit type and quantity. Column names
-                don&apos;t have to match; you&apos;ll choose which column is which next.
+                {copy.needHint} Column names don&apos;t have to match; you&apos;ll choose which
+                column is which next.
               </p>
-              <Button className="w-fit" onClick={downloadTemplate}>
+              <Button className="w-fit" onClick={() => downloadTemplate(copy)}>
                 <Download aria-hidden />
                 Download template
               </Button>
@@ -338,10 +377,10 @@ export function ImportWizard({ remembered }: { remembered: Mapping }) {
                 : "We've guessed from the column names; check them."}
             </p>
             <div className="grid min-w-0 gap-x-6 gap-y-4 md:grid-cols-2">
-              {ORDER_IMPORT_FIELDS.map((f) => {
+              {copy.fields.map((f) => {
                 const header = mapping[f.key];
                 const example = sample(header);
-                const required = "required" in f && f.required;
+                const required = Boolean(f.required);
                 return (
                   <Field
                     key={f.key}
@@ -349,7 +388,7 @@ export function ImportWizard({ remembered }: { remembered: Mapping }) {
                     hint={
                       example ? (
                         <Truncate>{`e.g. ${example}`}</Truncate>
-                      ) : "hint" in f && f.hint ? (
+                      ) : f.hint ? (
                         f.hint
                       ) : undefined
                     }
@@ -385,22 +424,30 @@ export function ImportWizard({ remembered }: { remembered: Mapping }) {
         <>
           <StatGroup>
             <Stat label="Rows in file" value={formatNumber(step.preview.rowCount)} />
-            <Stat label="Orders to import" value={formatNumber(step.preview.orderCount)} />
-            <Stat label="Order lines" value={formatNumber(step.preview.lineCount)} />
+            <Stat
+              label={`${many[0].toUpperCase()}${many.slice(1)} to import`}
+              value={formatNumber(step.preview.count)}
+            />
+            {step.preview.extra ? (
+              <Stat
+                label={step.preview.extra.label}
+                value={formatNumber(step.preview.extra.value)}
+              />
+            ) : null}
             <Stat label="Problem rows" value={formatNumber(step.preview.rejected.length)} />
           </StatGroup>
-          {step.preview.orderCount === 0 ? (
+          {step.preview.count === 0 ? (
             <p className="text-sm">
               None of the rows can be imported yet. Fix the problems below, or go back and check the
               column matches.
             </p>
           ) : null}
-          <ProblemList rejected={step.preview.rejected} table={table} />
+          <ProblemList rejected={step.preview.rejected} table={table} copy={copy} />
           <div className="flex flex-col-reverse gap-2 md:flex-row md:justify-between">
             <Button onClick={() => setStep({ name: "map" })}>Back to columns</Button>
-            {step.preview.orderCount > 0 ? (
+            {step.preview.count > 0 ? (
               <Button variant="primary" loading={pending} onClick={runImport}>
-                Import {plural(step.preview.orderCount, "order")}
+                Import {plural(step.preview.count, one, many)}
                 {step.preview.rejected.length ? ", skip the rest" : ""}
               </Button>
             ) : null}
@@ -415,7 +462,7 @@ export function ImportWizard({ remembered }: { remembered: Mapping }) {
               <Badge tone="success" icon={<CircleCheck aria-hidden />}>
                 Imported
               </Badge>
-              <p className="text-lg font-semibold">{plural(step.imported, "order")} imported</p>
+              <p className="text-lg font-semibold">{plural(step.imported, one, many)} imported</p>
               <p className="text-sm text-text-muted">
                 {step.rejected.length
                   ? `${plural(step.rejected.length, "row")} ${step.rejected.length === 1 ? "wasn't" : "weren't"} imported. Download them, fix them and import that file.`
@@ -424,13 +471,13 @@ export function ImportWizard({ remembered }: { remembered: Mapping }) {
               </p>
               <div className="flex flex-wrap gap-2">
                 <Button variant="primary" asChild>
-                  <Link href="/orders">View orders</Link>
+                  <Link href={copy.doneHref}>{copy.doneLabel}</Link>
                 </Button>
                 <Button onClick={reset}>Import another file</Button>
               </div>
             </CardContent>
           </Card>
-          <ProblemList rejected={step.rejected} table={table} />
+          <ProblemList rejected={step.rejected} table={table} copy={copy} />
         </>
       ) : null}
     </div>

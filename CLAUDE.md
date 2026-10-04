@@ -25,7 +25,11 @@ Build in the stages of spec section 14, in order, and only start a stage once th
   vehicle cost = the running-cost estimate (est.); "drops" counts every stop attempted, failed
   ones included; cost per drop divides priced loads' cost by their drops, with unpriced loads
   flagged; the agreed price clears when the vehicle or haulier changes.
-- Deferred: customer page Orders tab; other CSV imports.
+- Deferred: customer page Orders tab.
+- After Stage 10 ("just keep going"): CSV import for customers/sites (`/customers/import`, one row
+  per site, grouped into customers by account ref or name; existing customers get new sites;
+  postcodes are placed on the map) and vehicles (`/settings/vehicles/import`, each row checked by
+  `parseVehicle`; existing registrations rejected). Capacities are set per vehicle afterwards.
 - Not yet: emailed invitations and password reset (need Resend); GDPR export/deletion.
 - Next: all stages in spec section 14 are built. Remaining: the "Not yet" items and a hosted
   Supabase project.
@@ -121,6 +125,11 @@ In the Claude Code cloud environment, Chromium is preinstalled and `@playwright/
 - `src/lib/orders/`: `schemas.ts` (`parseOrder`, lines as `line_<n>_<column>`), `import.ts`
   (field list, `suggestMapping`, pure `planOrderImport` that validates every row), `history.ts`
   (audit rows → readable events), `summary.ts` ("6 DP · 2 EUR", weights), `options.ts`, `types.ts`.
+- Imports share `src/lib/import/mapping.ts` (fields, `suggestFieldMapping`, `fieldReader`,
+  `checkImportTable`, `yesNo`) and `src/components/import/import-wizard.tsx` (`ImportWizard` takes
+  copy from `<thing>ImportCopy()` plus preview/run server actions). Planners are pure:
+  `lib/orders/import.ts`, `lib/customers/import.ts` (with `import_customers(customers)`, SECURITY
+  INVOKER), `lib/vehicles/import.ts` (plain insert as admin).
 - `src/lib/csv.ts` (RFC 4180 parse/write, formula-injection safe) and `src/lib/download.ts`.
 - Orders DB: `save_order(id, order, lines)` and `import_orders(orders)` are SECURITY INVOKER and
   atomic. `orders.search_text` is maintained by triggers (including when a customer or site is

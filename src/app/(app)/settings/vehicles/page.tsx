@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
+import { Upload } from "lucide-react";
+import Link from "next/link";
 import { connection } from "next/server";
+import { Button } from "@/components/ui/button";
 import { SettingsHeader } from "@/components/settings/settings-header";
 import { PageContainer } from "@/components/shell/page";
 import { requireArea } from "@/lib/auth/session";
@@ -25,6 +28,14 @@ export default async function VehiclesPage() {
       <SettingsHeader
         title="Vehicles"
         description="Your own fleet: what each vehicle carries, how it unloads, and what it costs to run."
+        actions={
+          <Button asChild variant="secondary">
+            <Link href="/settings/vehicles/import">
+              <Upload aria-hidden />
+              Import CSV
+            </Link>
+          </Button>
+        }
       />
       <VehiclesManager
         rows={(vehicles ?? []) as Vehicle[]}

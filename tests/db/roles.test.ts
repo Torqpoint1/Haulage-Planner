@@ -505,6 +505,65 @@ describe("orders: planners edit, office staff view and see history (spec 3, 9.3)
   });
 });
 
+describe("customer import (spec 11)", () => {
+  const site = (name: string, postcode: string) => ({
+    name,
+    address: "",
+    postcode,
+    latitude: null,
+    longitude: null,
+    delivery_instructions: "",
+    booking_required: false,
+    site_equipment: ["forklift"],
+    contact: { name: "Imported Contact", phone: "01234 567890", email: "" },
+  });
+
+  it("planners import customers with their sites and contacts", async () => {
+    const planner = member(org, "planner").client;
+    const { data, error } = await planner.rpc("import_customers", {
+      customers: [
+        {
+          existing_id: null,
+          name: "Imported Customer Ltd",
+          account_ref: "IMPC1",
+          sites: [site("Main yard", "GL1 2BB"), site("Second yard", "GL5 3QF")],
+        },
+      ],
+    });
+    expect(error).toBeNull();
+    expect(data).toBe(2);
+    const { data: customer } = await planner
+      .from("customers")
+      .select("id, sites(name, site_equipment), contacts(name, site_id)")
+      .eq("account_ref", "IMPC1")
+      .single();
+    expect(customer?.sites).toHaveLength(2);
+    expect(customer?.contacts).toHaveLength(2);
+  });
+
+  it("is all or nothing, and office staff can't import", async () => {
+    const { error } = await member(org, "planner").client.rpc("import_customers", {
+      customers: [
+        {
+          existing_id: null,
+          name: "Half Import Ltd",
+          account_ref: "",
+          sites: [site("Ok", "GL1 2BB")],
+        },
+        { existing_id: null, name: "", account_ref: "", sites: [site("Bad", "GL1 2BB")] },
+      ],
+    });
+    expect(error).not.toBeNull();
+    const { data } = await service.from("customers").select("id").eq("name", "Half Import Ltd");
+    expect(data).toEqual([]);
+
+    const office = await member(org, "office").client.rpc("import_customers", {
+      customers: [{ existing_id: null, name: "Office Import", account_ref: "", sites: [] }],
+    });
+    expect(office.error).not.toBeNull();
+  });
+});
+
 describe("planning: loads, stops and order status (spec 6.8, 7.3)", () => {
   let settings: Awaited<ReturnType<typeof createSettings>>;
   let customer: Awaited<ReturnType<typeof createCustomer>>;
