@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
-import { PASSWORD, uniqueEmail } from "./support/accounts";
+import { PASSWORD, createAccount, uniqueEmail } from "./support/accounts";
+import { latestAuthEmail, sentEmails } from "./support/mail";
 
 const signedOut = { storageState: { cookies: [], origins: [] } };
 
@@ -24,6 +25,40 @@ test.describe("signed out", () => {
     await page.getByLabel("Password").fill(PASSWORD);
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page.getByRole("heading", { level: 1, name: "Orders" })).toBeVisible();
+  });
+
+  test("a forgotten password is reset from an emailed link", async ({ page }) => {
+    const { email } = await createAccount("Forgetful Fran", uniqueEmail("forgetful"));
+    await page.goto("/sign-in");
+    await page.getByRole("link", { name: "Forgot your password?" }).click();
+    await expect(page.getByRole("heading", { name: "Reset your password" })).toBeVisible();
+    await page.getByLabel("Email").fill(email);
+    await page.getByRole("button", { name: "Send reset link" }).click();
+    await expect(page.getByRole("status")).toContainText(`If there’s an account for ${email}`);
+
+    const text = await latestAuthEmail(email);
+    const link = text.match(/https?:\/\/\S+verify\S+/)?.[0];
+    expect(link, text).toBeTruthy();
+    await page.goto(link!);
+    await expect(page.getByRole("heading", { name: "Choose a new password" })).toBeVisible();
+    await expect(page.getByText(`For ${email}.`)).toBeVisible();
+    await page.getByLabel("New password").fill("a-brand-new-password");
+    await page.getByLabel("Type it again").fill("a-different-password");
+    await page.getByRole("button", { name: "Save password and sign in" }).click();
+    await expect(page.getByText("The passwords don't match.")).toBeVisible();
+    await page.getByLabel("Type it again").fill("a-brand-new-password");
+    await page.getByRole("button", { name: "Save password and sign in" }).click();
+    await expect(page).not.toHaveURL(/reset-password/);
+
+    // The new password works; the link doesn't work twice.
+    await page.context().clearCookies();
+    await page.goto(link!);
+    await expect(page).toHaveURL(/sign-in\?confirm=failed/);
+    await expect(page.getByText("That link has expired or has already been used.")).toBeVisible();
+    await page.getByLabel("Email").fill(email);
+    await page.getByLabel("Password").fill("a-brand-new-password");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page).not.toHaveURL(/sign-in/);
   });
 
   test("sign-up checks the form before sending it", async ({ page }) => {
@@ -82,9 +117,15 @@ test("an admin invites a colleague, who joins with the right role", async ({ pag
   await page.getByRole("option", { name: "Office" }).click();
   await invite.getByRole("button", { name: "Create invitation" }).click();
 
-  const ready = page.getByRole("dialog", { name: "Invitation ready" });
+  const ready = page.getByRole("dialog", { name: "Invitation sent" });
+  await expect(ready).toContainText(`We've emailed ${email} an invitation.`);
   const link = await ready.getByLabel("Invitation link").inputValue();
   expect(link).toMatch(/\/invite\/[0-9a-f]{64}$/);
+  // The email carries the same link.
+  const [sent] = await sentEmails(email);
+  expect(sent.subject).toBe("Sam Patel invited you to Example Doors Ltd on Haulage Planner");
+  expect(sent.text).toContain(link);
+  expect(sent.html).toContain(link);
   await ready.getByRole("button", { name: "Done" }).first().click();
   await expect(
     page.getByRole("table", { name: "Pending invitations" }).getByText(email),

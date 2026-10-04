@@ -8,5 +8,5 @@ export default async function SignInPage({ searchParams }: PageProps<"/sign-in">
   const params = await searchParams;
   const next = safeNext(typeof params.next === "string" ? params.next : null);
   const email = typeof params.email === "string" ? params.email : "";
-  return <SignInForm next={next} defaultEmail={email} />;
+  return <SignInForm next={next} defaultEmail={email} linkFailed={params.confirm === "failed"} />;
 }

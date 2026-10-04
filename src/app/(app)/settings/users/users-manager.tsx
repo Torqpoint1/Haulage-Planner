@@ -45,7 +45,7 @@ export function UsersManager({
   const [pending, startTransition] = useTransition();
   const [inviteOpen, setInviteOpen] = useState(false);
   const [removing, setRemoving] = useState<Member | null>(null);
-  const [newLink, setNewLink] = useState<{ email: string; link: string } | null>(null);
+  const [newLink, setNewLink] = useState<InviteLink | null>(null);
 
   function run(action: () => Promise<{ ok: boolean; error?: string }>, success: string) {
     startTransition(async () => {
@@ -93,7 +93,7 @@ export function UsersManager({
     startTransition(async () => {
       const result = await inviteMember({ email: i.email, role: i.role });
       if (result.ok) {
-        setNewLink({ email: i.email, link: result.link });
+        setNewLink({ email: i.email, link: result.link, emailed: result.emailed });
         router.refresh();
       } else toast.error(result.error);
     });
@@ -293,9 +293,9 @@ export function UsersManager({
       <InviteModal
         open={inviteOpen}
         onOpenChange={setInviteOpen}
-        onInvited={(email, link) => {
+        onInvited={(value) => {
           setInviteOpen(false);
-          setNewLink({ email, link });
+          setNewLink(value);
           router.refresh();
         }}
       />
@@ -336,7 +336,7 @@ function InviteModal({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onInvited: (email: string, link: string) => void;
+  onInvited: (value: InviteLink) => void;
 }) {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<Role>("planner");
@@ -356,7 +356,11 @@ function InviteModal({
     startTransition(async () => {
       const result = await inviteMember({ email, role });
       if (result.ok) {
-        onInvited(email.trim().toLowerCase(), result.link);
+        onInvited({
+          email: email.trim().toLowerCase(),
+          link: result.link,
+          emailed: result.emailed,
+        });
         reset();
       } else {
         setErrors(result.fieldErrors ?? {});
@@ -406,13 +410,9 @@ function InviteModal({
   );
 }
 
-function InviteLinkModal({
-  value,
-  onClose,
-}: {
-  value: { email: string; link: string } | null;
-  onClose: () => void;
-}) {
+type InviteLink = { email: string; link: string; emailed: boolean };
+
+function InviteLinkModal({ value, onClose }: { value: InviteLink | null; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
   return (
     <Modal
@@ -423,10 +423,12 @@ function InviteLinkModal({
           onClose();
         }
       }}
-      title="Invitation ready"
+      title={value?.emailed ? "Invitation sent" : "Invitation ready"}
       description={
         value
-          ? `Send this link to ${value.email}. It works once and expires in 14 days.`
+          ? value.emailed
+            ? `We've emailed ${value.email} an invitation. It works once and expires in 14 days. You can also send them this link yourself.`
+            : `Send this link to ${value.email}. It works once and expires in 14 days.`
           : undefined
       }
       footer={<Button onClick={onClose}>Done</Button>}

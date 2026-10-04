@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import { expectNoOverflow } from "./helpers";
+import { sentEmails } from "./support/mail";
 
 /** Spec 12 (UK GDPR): admins export everything and can request deletion. */
 
@@ -50,6 +51,10 @@ test("deletion is requested with a typed confirmation and can be cancelled", asy
   await page.getByRole("button", { name: "Request deletion" }).click();
   const status = page.getByRole("status").filter({ hasText: "Deletion requested" });
   await expect(status).toContainText("will be deleted on or after");
+  // Whoever runs the service hears about it.
+  const emails = await sentEmails("operator@example.test");
+  expect(emails.at(-1)!.subject).toBe("Deletion requested: Example Doors Ltd");
+  expect(emails.at(-1)!.text).toContain("Reason: Testing the request");
   await expectNoOverflow(page);
 
   await page.getByRole("button", { name: "Cancel the deletion request" }).click();

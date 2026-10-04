@@ -38,10 +38,14 @@ Build in the stages of spec section 14, in order, and only start a stage once th
   `PRIVACY_NOTICE_URL` / `DATA_PROCESSING_TERMS_URL` ("Not published yet" until set; the privacy
   link also shows on sign-up); deletion request with typed confirmation (`deletion_requests`,
   admins only, one open at a time, cancellable). Decision (mine): the app records the request and
-  the operator deletes after 30 days; nothing is deleted automatically.
-- Not yet: emailed invitations and password reset (need Resend).
-- Next: all stages in spec section 14 are built. Remaining: the "Not yet" items and a hosted
-  Supabase project.
+  the operator deletes after 30 days; nothing is deleted automatically (`OPERATOR_EMAIL` is
+  emailed when set). Email: `src/lib/services/email.ts` (Resend over HTTP, never throws; without
+  `RESEND_API_KEY` + `EMAIL_FROM` it returns `{ sent: false }`). Invitations are emailed and the
+  link is still shown to copy. Password reset: `/forgot-password` → Supabase Auth email (Resend
+  SMTP in production; Mailpit locally, read by `e2e/support/mail.ts`) → `/auth/confirm?code=` →
+  `/reset-password`. Playwright starts `e2e/support/mock-resend.mjs` on 3197.
+- Next: all stages in spec section 14 and the follow-ups are built. Remaining: a hosted Supabase
+  project (with Resend SMTP and the redirect URLs), a Resend domain, and the privacy documents.
 - Open: no hosted Supabase project yet. postcodes.io and OpenRouteService are blocked by this
   cloud environment's network policy; browser tests use `e2e/support/mock-postcodes.mjs`
   (`POSTCODES_API_URL=http://localhost:3199`) and `e2e/support/mock-ors.mjs`

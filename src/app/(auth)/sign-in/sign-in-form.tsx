@@ -17,10 +17,23 @@ type Values = { email: string; password: string };
  * Signs in from the browser so Supabase's per-IP rate limits apply to each
  * visitor rather than to our server (spec 12: rate limiting on auth).
  */
-export function SignInForm({ next, defaultEmail }: { next: string; defaultEmail: string }) {
+export function SignInForm({
+  next,
+  defaultEmail,
+  linkFailed = false,
+}: {
+  next: string;
+  defaultEmail: string;
+  /** Arrived from an emailed link that had expired or was already used. */
+  linkFailed?: boolean;
+}) {
   const router = useRouter();
   const [errors, setErrors] = useState<FieldErrors<Values>>({});
-  const [formError, setFormError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(
+    linkFailed
+      ? "That link has expired or has already been used. Sign in, or ask for a new reset link."
+      : null,
+  );
   const [pending, setPending] = useState(false);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -69,6 +82,12 @@ export function SignInForm({ next, defaultEmail }: { next: string; defaultEmail:
         <Field label="Password" error={errors.password}>
           <Input name="password" type="password" autoComplete="current-password" required />
         </Field>
+        <Link
+          href="/forgot-password"
+          className="w-fit text-sm font-medium text-accent-text underline underline-offset-2"
+        >
+          Forgot your password?
+        </Link>
         <Button type="submit" variant="primary" size="lg" loading={pending} className="mt-2 w-full">
           Sign in
         </Button>

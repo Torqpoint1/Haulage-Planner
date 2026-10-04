@@ -1,6 +1,7 @@
 "use server";
 
 import { getSession } from "@/lib/auth/session";
+import { sendEmail } from "@/lib/services/email";
 import type { FormState } from "@/lib/settings/result";
 import { asAdmin, refresh } from "@/lib/settings/save";
 import { createClient } from "@/lib/supabase/server";
@@ -31,6 +32,19 @@ export async function requestDeletion(formData: FormData): Promise<FormState> {
             ? "Deletion has already been requested."
             : "The request wasn't sent. Try again.",
       };
+    }
+    // Tell whoever runs the service, when that's set up; the request is recorded either way.
+    const operator = process.env.OPERATOR_EMAIL;
+    if (operator) {
+      await sendEmail({
+        to: operator,
+        subject: `Deletion requested: ${name}`,
+        text: [
+          `${session?.fullName || session?.email} asked for ${name} (organisation ${session?.membership?.organisation.id}) and all its data to be deleted.`,
+          `Reason: ${reason || "none given"}`,
+          "Delete it after 30 days unless the request is cancelled in Settings → Your data.",
+        ].join("\n\n"),
+      });
     }
     refresh(PATH);
     return { ok: true };

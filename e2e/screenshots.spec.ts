@@ -390,6 +390,7 @@ for (const theme of THEMES) {
         for (const [name, path, heading] of [
           ["sign-in", "/sign-in", "Sign in"],
           ["sign-up", "/sign-up", "Create an account"],
+          ["forgot-password", "/forgot-password", "Reset your password"],
           ["invite-not-found", `/invite/${"0".repeat(64)}`, "Invitation not found"],
         ] as const) {
           test(name, async ({ page }) => {

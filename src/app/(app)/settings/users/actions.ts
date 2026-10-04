@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { friendlyError } from "@/lib/auth/errors";
 import { changeRoleSchema, fieldErrors, inviteSchema } from "@/lib/auth/schemas";
+import { ROLE_INFO } from "@/lib/auth/roles";
 import { NotAllowedError, requireCapability } from "@/lib/auth/session";
+import { sendEmail, simpleEmail } from "@/lib/services/email";
 import { createClient } from "@/lib/supabase/server";
 
 export type ActionResult<T = object> =
@@ -37,8 +39,8 @@ async function siteOrigin() {
 export async function inviteMember(input: {
   email: string;
   role: string;
-}): Promise<ActionResult<{ link: string }>> {
-  return guarded<{ link: string }>(async () => {
+}): Promise<ActionResult<{ link: string; emailed: boolean }>> {
+  return guarded<{ link: string; emailed: boolean }>(async () => {
     const parsed = inviteSchema.safeParse(input);
     if (!parsed.success)
       return {
@@ -53,8 +55,26 @@ export async function inviteMember(input: {
       .single<{ invitation_id: string; token: string }>();
     if (error || !data) return { ok: false, error: friendlyError(error) };
 
+    const link = `${await siteOrigin()}/invite/${data.token}`;
+    const session = await requireCapability("users.manage");
+    const org = session.membership.organisation.name;
+    const role = ROLE_INFO[parsed.data.role].label.toLowerCase();
+    const who = session.fullName || session.email;
+    const sent = await sendEmail({
+      to: parsed.data.email,
+      subject: `${who} invited you to ${org} on Haulage Planner`,
+      ...simpleEmail({
+        paragraphs: [
+          `${who} has invited you to join ${org} on Haulage Planner as ${/^[aeiou]/.test(role) ? "an" : "a"} ${role}.`,
+          "Use the button below to create your account or sign in. The link works once and expires in 14 days.",
+        ],
+        action: { label: "Accept the invitation", url: link },
+        footer: "If you weren't expecting this, you can ignore this email.",
+      }),
+    });
+
     revalidatePath(PATH);
-    return { ok: true, link: `${await siteOrigin()}/invite/${data.token}` };
+    return { ok: true, link, emailed: sent.sent };
   });
 }
 

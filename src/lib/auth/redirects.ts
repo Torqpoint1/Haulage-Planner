@@ -9,7 +9,14 @@ export function safeNext(next: string | null | undefined, fallback = "/"): strin
 }
 
 /** Routes anyone can open without signing in. */
-export const PUBLIC_PATHS = ["/sign-in", "/sign-up", "/invite", "/auth", "/dev"];
+export const PUBLIC_PATHS = [
+  "/sign-in",
+  "/sign-up",
+  "/forgot-password",
+  "/invite",
+  "/auth",
+  "/dev",
+];
 
 export function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));

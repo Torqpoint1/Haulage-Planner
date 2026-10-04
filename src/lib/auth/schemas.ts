@@ -12,14 +12,25 @@ export const signInSchema = z.object({
 
 export const PASSWORD_MIN = 10;
 
+const newPassword = z
+  .string()
+  .min(PASSWORD_MIN, `Use at least ${PASSWORD_MIN} characters.`)
+  .max(72, "Use 72 characters or fewer.");
+
 export const signUpSchema = z.object({
   fullName: z.string().trim().min(2, "Enter your name.").max(120, "Use 120 characters or fewer."),
   email,
-  password: z
-    .string()
-    .min(PASSWORD_MIN, `Use at least ${PASSWORD_MIN} characters.`)
-    .max(72, "Use 72 characters or fewer."),
+  password: newPassword,
 });
+
+export const forgotPasswordSchema = z.object({ email });
+
+export const resetPasswordSchema = z
+  .object({ password: newPassword, confirm: z.string() })
+  .refine((v) => v.password === v.confirm, {
+    path: ["confirm"],
+    message: "The passwords don't match.",
+  });
 
 export const organisationSchema = z.object({
   name: z
