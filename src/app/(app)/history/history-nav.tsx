@@ -7,9 +7,10 @@ import { cn } from "@/lib/cn";
 const TABS = [
   { href: "/history", label: "Deliveries" },
   { href: "/history/assets", label: "Assets" },
+  { href: "/history/reports", label: "Reports" },
 ];
 
-/** History's two views: what was delivered, and where the returnable assets are. */
+/** History's views: what was delivered, where the returnable assets are, and reports. */
 export function HistoryNav() {
   const pathname = usePathname();
   return (

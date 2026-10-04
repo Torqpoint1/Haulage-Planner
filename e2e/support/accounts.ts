@@ -233,6 +233,7 @@ export async function createCompany(
   await seedPlanning(admin.client);
   await seedDriverRun(admin.client);
   await seedHistory(admin.client);
+  await seedReports(admin.client);
   await seedAssets(admin.client);
   return { adminEmail: admin.email, members: created };
 }
@@ -1124,4 +1125,91 @@ async function seedAssets(client: Client) {
       expected_return_date: isoInDays(-12),
     })),
   );
+}
+
+/**
+ * Completed haulier loads last month for the reports (HS-504…506): Cotswold
+ * Haulage at an agreed £180 for two drops, one of which failed (no access),
+ * and Severn Pallet Network priced from its rate card, failed (site closed).
+ */
+async function seedReports(client: Client) {
+  const { lastMonth } = historyDates();
+  const day = lastMonth.replace(/-10$/, "-11");
+  const [{ data: units }, { data: hauliers }, { data: depots }, { data: sites }] =
+    await Promise.all([
+      client.from("unit_types").select("id, short_code"),
+      client.from("hauliers").select("id, name"),
+      client.from("depots").select("id").eq("is_default", true),
+      client.from("sites").select("id, customer_id, name"),
+    ]);
+  const unit = (code: string) => units!.find((u) => u.short_code === code)!.id;
+  const site = (name: string) => sites!.find((x) => x.name === name)!;
+  const haulier = (name: string) => hauliers!.find((h) => h.name === name)!.id;
+  const order = (ref: string, siteName: string, code: string, quantity: number) => ({
+    order: {
+      customer_id: site(siteName).customer_id,
+      site_id: site(siteName).id,
+      order_ref: ref,
+      required_date: day,
+      readiness: "ready",
+    },
+    lines: [{ unit_type_id: unit(code), quantity, weight_per_unit_kg: 300 }],
+  });
+  const { error } = await client.rpc("import_orders", {
+    orders: [
+      order("HS-504", "Plot 14, Meadow View", "EUR", 2),
+      order("HS-505", "Gloucester workshop", "EUR", 1),
+      order("HS-506", "Newport depot", "EUR", 2),
+    ],
+  });
+  if (error) throw new Error(`report orders: ${error.message}`);
+  const { data: saved } = await client
+    .from("orders")
+    .select("id, order_ref")
+    .like("order_ref", "HS-50%");
+  const id = (ref: string) => saved!.find((o) => o.order_ref === ref)!.id;
+
+  async function haulierLoad(
+    name: string,
+    agreed: number | null,
+    drops: { ref: string; failed?: string }[],
+  ) {
+    const [loadId] = await insert(client, "loads", [
+      { load_date: day, depot_id: depots![0].id, haulier_id: haulier(name), agreed_price: agreed },
+    ]);
+    for (const d of drops) {
+      const { data: stopId, error: addError } = await client.rpc("add_order_to_load", {
+        target_load: loadId,
+        target_order: id(d.ref),
+      });
+      if (addError) throw new Error(`add ${d.ref}: ${addError.message}`);
+      await client
+        .from("load_stops")
+        .update({ status: d.failed ? "failed" : "delivered" })
+        .eq("id", stopId);
+      if (d.failed) {
+        await insert(client, "pods", [
+          {
+            stop_id: stopId,
+            load_id: loadId,
+            client_id: randomUUID(),
+            outcome: "failed",
+            failure_reason: d.failed,
+            note: "Recorded for the reports demo",
+            recorded_at: `${day}T11:00:00Z`,
+          },
+        ]);
+      }
+      await client
+        .from("orders")
+        .update({ status: d.failed ? "failed" : "delivered" })
+        .eq("id", id(d.ref));
+    }
+    await client.from("loads").update({ status: "complete" }).eq("id", loadId);
+  }
+  await haulierLoad("Cotswold Haulage", 180, [
+    { ref: "HS-504" },
+    { ref: "HS-505", failed: "no_access" },
+  ]);
+  await haulierLoad("Severn Pallet Network", null, [{ ref: "HS-506", failed: "site_closed" }]);
 }

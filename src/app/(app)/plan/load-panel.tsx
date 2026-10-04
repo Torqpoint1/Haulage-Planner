@@ -469,7 +469,10 @@ export function LoadPanel({
   onEdit,
   focus,
   onFocusDone,
+  highlightWarning = null,
 }: {
+  /** A warning to scroll to and highlight, e.g. from a Today screen link. */
+  highlightWarning?: string | null;
   view: LoadView | null;
   data: PlanData;
   open: boolean;
@@ -679,7 +682,18 @@ export function LoadPanel({
         {shown.length ? (
           <ul className="flex flex-col gap-2" aria-label="Warnings">
             {shown.map((w) => (
-              <li key={w.key}>
+              <li
+                key={w.key}
+                ref={
+                  w.key === highlightWarning
+                    ? (el) => el?.scrollIntoView({ block: "center" })
+                    : undefined
+                }
+                aria-current={w.key === highlightWarning ? "true" : undefined}
+                className={cn(
+                  w.key === highlightWarning && "rounded-md ring-2 ring-accent ring-offset-2",
+                )}
+              >
                 <WarningItem
                   warning={w}
                   overridden={

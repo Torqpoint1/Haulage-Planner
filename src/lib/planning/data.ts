@@ -197,6 +197,7 @@ export async function loadPlanData(from: string, to: string): Promise<PlanData> 
     notes: l.notes,
     driver_ids: l.drivers.map((d) => d.driver_id),
     standing_run_id: l.standing_run_id ?? null,
+    agreed_price: l.agreed_price == null ? null : Number(l.agreed_price),
     stops: l.stops
       .map((s) => ({
         id: s.id,

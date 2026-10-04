@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { SCREENS, THEMES, WIDTHS, expectNoOverflow, setPreferences } from "./helpers";
-import { planningDays } from "./support/accounts";
+import { historyDates, planningDays } from "./support/accounts";
 
 const SETTINGS_SCREENS = [
   ["/settings", "Settings"],
@@ -312,6 +312,18 @@ for (const theme of THEMES) {
         await expectNoOverflow(page);
         await page.screenshot({
           path: `screenshots/${theme}/${width}/history-results.png`,
+          fullPage: true,
+        });
+        await page.goto(`/history/reports?month=${historyDates().lastMonth.slice(0, 7)}`);
+        await expect(
+          page
+            .getByRole("table", { name: "Cost per drop" })
+            .or(page.getByRole("list", { name: "Cost per drop" })),
+        ).toBeVisible();
+        await settle(page);
+        await expectNoOverflow(page);
+        await page.screenshot({
+          path: `screenshots/${theme}/${width}/history-reports.png`,
           fullPage: true,
         });
         await page.goto("/history/assets");

@@ -3,6 +3,7 @@ import { CONFIRMATION_METHODS } from "./types";
 import {
   errorsByField,
   number,
+  optionalNumber,
   optionalText,
   requiredDate,
   type FormObject,
@@ -44,6 +45,7 @@ const loadSchema = z.object({
   driver_ids: ids,
   crew_size: number("the crew size", { integer: true, min: 1, max: 4 }),
   start_time: time("the start time"),
+  agreed_price: optionalNumber("the agreed price", { min: 0, max: 100000, unit: "£" }),
   notes: optionalText(2000),
 });
 
@@ -55,6 +57,8 @@ export type LoadInput = {
   driver_ids: string[];
   crew_size: number;
   start_time: string;
+  /** What a haulier agreed to charge; reports fall back to the rate card. */
+  agreed_price: number | null;
   notes: string;
 };
 
@@ -69,6 +73,7 @@ export function parseLoad(
     ...rest,
     vehicle_id: kind === "vehicle" ? id : null,
     haulier_id: kind === "haulier" ? id : null,
+    agreed_price: kind === "haulier" ? (rest.agreed_price ?? null) : null,
   };
   if (data.haulier_id && data.driver_ids.length) {
     return {

@@ -164,6 +164,7 @@ export async function adviseOrder(
     notes: "",
     driver_ids: [],
     standing_run_id: null,
+    agreed_price: null,
     stops: [
       {
         id: "compare-stop",

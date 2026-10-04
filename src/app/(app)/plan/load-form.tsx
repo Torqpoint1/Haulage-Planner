@@ -115,6 +115,19 @@ export function LoadFormModal({
         <FormField name="assignment" label="Vehicle or haulier" hint="You can decide later.">
           <Select name="assignment" options={assignmentOptions} defaultValue={current} />
         </FormField>
+        <FormField
+          name="agreed_price"
+          label="Agreed price"
+          hint="Hauliers only: what they'll charge. Reports use the rate card when it's blank."
+        >
+          <Input
+            name="agreed_price"
+            inputMode="decimal"
+            defaultValue={load?.agreed_price ?? ""}
+            leadingIcon={<span className="text-sm">£</span>}
+            className="num"
+          />
+        </FormField>
         {data.drivers.length ? (
           <CheckboxGroup
             name="driver_ids"

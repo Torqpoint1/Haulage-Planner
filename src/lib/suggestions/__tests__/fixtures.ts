@@ -127,6 +127,7 @@ export function emptyLoad(over: Partial<PlanLoad> = {}): PlanLoad {
     notes: "",
     driver_ids: [],
     standing_run_id: null,
+    agreed_price: null,
     stops: [],
     ...over,
   };

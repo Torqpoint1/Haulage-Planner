@@ -124,6 +124,8 @@ export type PlanLoad = {
   stops: PlanStop[];
   /** Made from a standing run (spec 6.12). */
   standing_run_id: string | null;
+  /** What a haulier agreed to charge for this load. */
+  agreed_price: number | null;
 };
 
 export type PlanDecision = Decision & { load_id: string; key: string; at: string };

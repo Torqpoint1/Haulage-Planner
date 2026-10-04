@@ -44,6 +44,7 @@ export default async function PlanPage({ searchParams }: PageProps<"/plan">) {
       day={day}
       weekends={params.weekend === "1"}
       selectedLoadId={typeof params.load === "string" ? params.load : null}
+      highlightWarning={typeof params.warning === "string" ? params.warning : null}
       canEdit={can(role, "loads.edit")}
       canApprove={can(role, "plans.approve")}
       canOverride={can(role, "warnings.override")}

@@ -91,6 +91,7 @@ function draftLoad(
     notes: "",
     driver_ids: [],
     standing_run_id: null,
+    agreed_price: null,
     stops: [...bySite].map(([siteId, ids], i) => ({
       id: `${key}-stop-${i}`,
       sequence: i + 1,

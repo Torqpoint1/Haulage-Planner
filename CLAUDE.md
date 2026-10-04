@@ -9,34 +9,26 @@ Build in the stages of spec section 14, in order, and only start a stage once th
 
 ## Current stage
 
-**Stage 9: History and assets. Complete; awaiting sign-off.** (Stages 0–8 signed off.)
+**Stage 10: Today and reports. Complete; awaiting sign-off.** (Stages 0–9 signed off.)
 
-- Done: History tab with two views. "Deliveries" (`/history`) searches by customer, month or
-  date range, site, order ref, PO, delivery note, vehicle, driver and haulier in one go; results
-  show each load, its stops, the confirmation record, documents and proof of delivery, with totals
-  and CSV export; the search lives in the URL. "Assets" (`/history/assets`) is the returnable asset
-  register: where each one is, overdue first, add by number or range, mark lost/retired/back at a
-  depot/at a site, change due back, full movement history. Assets move with loads: drops go on the
-  vehicle when the load goes out, to the customer when the driver records the delivery (due back
-  after the unit type's "Due back within" days), collections come back on the vehicle when ticked
-  and everything still aboard returns to the depot when the load completes. Planners (and the
-  warehouse, for drops) assign assets on the load panel and pick sheet; drivers see them on the
-  stop and tick what they collected; collection-only stops need no name or signature.
-  ASSET_OVERDUE now uses real data; asset collection suggestions (8.5) appear in the load panel.
-  Customer page Assets tab. Standing runs (Settings): days, cut-off, start time, depot, default
-  vehicle and driver, regular sites in order; opening the plan creates any missing draft loads for
-  the week's run days (once each), and the load panel suggests orders for the run's sites received
-  before the cut-off (later ones listed separately), added in the run's site order.
-- Decisions (agreed with the user): assets live in History; due back = days per unit type;
-  planner/warehouse assign assets; standing-run loads are created when the plan is opened.
-  Mine: a deleted standing-run draft load isn't recreated; generation only runs for planners and
-  admins and only from today; "received before cut-off" uses the order's created time against the
-  cut-off on the run day (London time); a manual asset move cancels any plan for it; assets on a
-  completed load can't be corrected through the POD (move the asset instead).
-- Deferred: Today screen's overdue asset count (Stage 10); customer page Orders tab; other CSV
-  imports.
+- Done: Today (spec 9.1): header stats (loads, vehicles out, drops, overdue assets linked to the
+  register); Needs attention for loads from today to the look-ahead (default 5 working days):
+  blocking warnings first, then checks, grouped by load, each with a Fix link that opens the load
+  on the plan with that warning highlighted (`/plan?…&load=&warning=<key>`); today's loads with
+  driver, stops, capacity bars, status and warning counts; orders due in the look-ahead that are
+  unplanned or not ready (overdue marked). Reports (History → Reports) over completed loads for a
+  month or date range: cost per drop by vehicle/haulier, vehicle fill %, failed deliveries by
+  reason (with the list), haulier spend by month; CSV export. Haulier loads take an optional
+  agreed price.
+- Decisions (agreed with the user): reports live in History; haulier cost = agreed price, else the
+  rate card (est.); only completed loads count; fill = higher of space and weight. Mine: own
+  vehicle cost = the running-cost estimate (est.); "drops" counts every stop attempted, failed
+  ones included; cost per drop divides priced loads' cost by their drops, with unpriced loads
+  flagged; the agreed price clears when the vehicle or haulier changes.
+- Deferred: customer page Orders tab; other CSV imports.
 - Not yet: emailed invitations and password reset (need Resend); GDPR export/deletion.
-- Next: **Stage 10: Today and reports**.
+- Next: all stages in spec section 14 are built. Remaining: the "Not yet" items and a hosted
+  Supabase project.
 - Open: no hosted Supabase project yet. postcodes.io and OpenRouteService are blocked by this
   cloud environment's network policy; browser tests use `e2e/support/mock-postcodes.mjs`
   (`POSTCODES_API_URL=http://localhost:3199`) and `e2e/support/mock-ors.mjs`
@@ -65,7 +57,9 @@ sessions in `e2e/.auth/` (gitignored); tests default to the admin. "Dan Driver" 
 driver with a confirmed run today (DR-4xx, `seedDriverRun`); "Rhys Relief" is a second, unlinked
 driver login for the settings test. Past deliveries HS-5xx (last month and the month before,
 `seedHistory`) and stillages ST-101…106 at the depot plus overdue ST-201/202 at Cotswold
-Kitchens' Cheltenham showroom (`seedAssets`). Test helpers that write go through the demo admin
+Kitchens' Cheltenham showroom (`seedAssets`). Completed haulier loads last month for reports
+(HS-504…506, `seedReports`: Cotswold at an agreed £180 with one failed drop, Severn from its rate
+card, failed). Test helpers that write go through the demo admin
 (`adminClient()`): the service role can't run the `private` schema's triggers. The company is seeded with
 realistic settings (`seedSettings` in `e2e/support/accounts.ts`), so tests that create things use
 names that don't clash with the seed.
@@ -210,6 +204,13 @@ In the Claude Code cloud environment, Chromium is preinstalled and `@playwright/
 - History: `search_history(...)` (SQL, SECURITY INVOKER) returns matching order/stop/load ids;
   `src/lib/history/filters.ts` (URL filters, month → range; tested) and `search.ts` (details,
   signed document links). `history/history-search.tsx`, `history-nav.tsx`.
+- `src/lib/today/`: `data.ts` (`loadToday`: stats, attention groups with plan links, today's loads,
+  due orders), `days.ts` (`addWorkingDays`; tested). `src/app/(app)/today/page.tsx`. The load
+  panel takes `highlightWarning` (scrolls to it, `aria-current`).
+- `src/lib/reports/`: `compute.ts` (pure `buildReport` over per-load figures; tested), `data.ts`
+  (`loadReport(from, to)`: completed loads, costs from running costs / agreed price / rate card via
+  `deliveryOptions`, fill, failed reasons from PODs). `history/reports/`. `loads.agreed_price`
+  (hauliers only, by check).
 - `src/lib/branding.ts`: logo storage paths and signed URLs; `(app)/layout.tsx` injects the
   organisation's accent colour.
 

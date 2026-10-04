@@ -65,6 +65,8 @@ type Props = {
   day: string | null;
   weekends: boolean;
   selectedLoadId: string | null;
+  /** A warning to bring into view in the open load (links from the Today screen). */
+  highlightWarning?: string | null;
   canEdit: boolean;
   canApprove: boolean;
   canOverride: boolean;
@@ -78,6 +80,7 @@ export function PlanBoard({
   day,
   weekends,
   selectedLoadId,
+  highlightWarning = null,
   canEdit,
   canApprove,
   canOverride,
@@ -610,6 +613,7 @@ export function PlanBoard({
         }
         focus={focus}
         onFocusDone={() => setFocus(null)}
+        highlightWarning={highlightWarning}
       />
 
       {form ? (

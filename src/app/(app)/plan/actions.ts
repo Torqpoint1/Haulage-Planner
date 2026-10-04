@@ -82,8 +82,9 @@ export async function updateLoad(
     const parsed = patchSchema.safeParse(patch);
     if (!parsed.success) return fail("That change isn't valid.");
     const row: Record<string, unknown> = { ...parsed.data };
-    if (row.vehicle_id) row.haulier_id = null;
-    if (row.haulier_id) row.vehicle_id = null;
+    // A price agreed with one haulier doesn't carry over to another vehicle or haulier.
+    if (row.vehicle_id) Object.assign(row, { haulier_id: null, agreed_price: null });
+    if (row.haulier_id) Object.assign(row, { vehicle_id: null, agreed_price: null });
     const supabase = await createClient();
     const { data, error } = await supabase
       .from("loads")
