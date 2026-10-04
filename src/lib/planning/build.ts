@@ -78,7 +78,25 @@ export function buildContext(
     thresholds: data.thresholds,
     staleDays: data.staleDays,
     zones: data.zones,
-    assets: [],
+    // At customers, and not already being collected on this load.
+    assets: data.assets
+      .filter(
+        (a) =>
+          a.status === "at_customer" &&
+          a.site_id &&
+          !load.stops.some((s) =>
+            s.assets.some(
+              (x) => x.asset_id === a.id && x.direction === "collect" && x.outcome === "pending",
+            ),
+          ),
+      )
+      .map((a) => ({
+        id: a.id,
+        asset_number: a.asset_number,
+        unit_type_name: a.unit_type_name,
+        site_id: a.site_id!,
+        expected_return_date: a.expected_return_date,
+      })),
     now: clock.now,
     today: clock.today,
     legs: data.legs,

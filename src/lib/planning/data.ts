@@ -5,6 +5,7 @@ import type { RuleUnitType, RuleZone } from "@/lib/rules/context";
 import { resolveThresholds } from "@/lib/settings/thresholds";
 import type {
   PalletSize,
+  PlanAsset,
   PlanData,
   PlanHaulier,
   PlanLoad,
@@ -122,11 +123,13 @@ export async function loadPlanData(from: string, to: string): Promise<PlanData> 
     pzRes,
     orgRes,
     decisionsRes,
+    assetsRes,
+    runsRes,
   ] = await Promise.all([
     supabase
       .from("loads")
       .select(
-        "*, drivers:load_drivers(driver_id), stops:load_stops(*, orders:stop_orders!stop_orders_stop_id_organisation_id_fkey(order_id))",
+        "*, drivers:load_drivers(driver_id), stops:load_stops(*, orders:stop_orders!stop_orders_stop_id_organisation_id_fkey(order_id), assets:stop_assets(asset_id, direction, outcome))",
       )
       .gte("load_date", from)
       .lte("load_date", to)
@@ -162,10 +165,18 @@ export async function loadPlanData(from: string, to: string): Promise<PlanData> 
       .select("load_id, warning_key, kind, reason, created_at, created_by, loads!inner(load_date)")
       .gte("loads.load_date", from)
       .lte("loads.load_date", to),
+    supabase
+      .from("assets")
+      .select(
+        "id, asset_number, unit_type_id, status, depot_id, customer_id, site_id, load_id, expected_return_date, unit_type:unit_types(name)",
+      )
+      .in("status", ["at_depot", "on_vehicle", "at_customer"])
+      .order("asset_number"),
+    supabase.from("standing_runs").select("id, name").order("name"),
   ]);
 
   // An empty board because a query failed would be misleading; show the error page instead.
-  for (const res of [loadsRes, poolRes, vehiclesRes, unitsRes, orgRes, decisionsRes]) {
+  for (const res of [loadsRes, poolRes, vehiclesRes, unitsRes, orgRes, decisionsRes, assetsRes]) {
     if (res.error) throw new Error(`Plan data: ${res.error.message}`);
   }
 
@@ -185,6 +196,7 @@ export async function loadPlanData(from: string, to: string): Promise<PlanData> 
     status: l.status,
     notes: l.notes,
     driver_ids: l.drivers.map((d) => d.driver_id),
+    standing_run_id: l.standing_run_id ?? null,
     stops: l.stops
       .map((s) => ({
         id: s.id,
@@ -201,6 +213,7 @@ export async function loadPlanData(from: string, to: string): Promise<PlanData> 
         confirmed_at: s.confirmed_at,
         confirmation_note: s.confirmation_note,
         order_ids: s.orders.map((o) => o.order_id),
+        assets: s.assets ?? [],
       }))
       .sort((a, b) => a.sequence - b.sequence),
   }));
@@ -219,10 +232,17 @@ export async function loadPlanData(from: string, to: string): Promise<PlanData> 
   }
   const pool = ((poolRes.data ?? []) as unknown as OrderRow[]).map((o) => o.id);
 
+  type AssetRow = Omit<PlanAsset, "unit_type_name"> & { unit_type: { name: string } | null };
+  const assets: PlanAsset[] = ((assetsRes.data ?? []) as unknown as AssetRow[]).map(
+    ({ unit_type, ...a }) => ({ ...a, unit_type_name: unit_type?.name ?? "Asset" }),
+  );
+
+  // Sites with orders or stops, plus those holding assets (for collections, spec 8.5).
   const siteIds = [
     ...new Set([
       ...Object.values(orders).map((o) => o.site_id),
       ...loads.flatMap((l) => l.stops.map((s) => s.site_id)),
+      ...assets.map((a) => a.site_id).filter((id): id is string => Boolean(id)),
     ]),
   ];
   const sitesRes = siteIds.length
@@ -352,6 +372,8 @@ export async function loadPlanData(from: string, to: string): Promise<PlanData> 
     loads,
     legs,
     picking,
+    assets,
+    standingRuns: runsRes.data ?? [],
     orders,
     pool,
     sites,

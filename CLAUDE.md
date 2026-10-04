@@ -9,30 +9,34 @@ Build in the stages of spec section 14, in order, and only start a stage once th
 
 ## Current stage
 
-**Stage 8: Drivers. Complete; awaiting sign-off.** (Stages 0–7 signed off.)
+**Stage 9: History and assets. Complete; awaiting sign-off.** (Stages 0–8 signed off.)
 
-- Done: driver phone view (`/driver`): today's loads for the driver linked to the login (admins
-  can pick any driver), stops in drop order with address, Navigate (Apple Maps on iPhone, Google
-  Maps elsewhere, at the pin), tap-to-call contacts (site and customer-wide), delivery
-  instructions, access/site rules, booking slot or ETA, handling notes and orders. Delivered /
-  Part delivered / Failed capture name, signature, photos (compressed on the phone, up to 6),
-  quantities, damage notes and location (if allowed); failed needs a reason from a fixed list and
-  a note. Submissions go to an IndexedDB outbox and send when there's signal; a service worker
-  keeps the run page and its files so it reopens without signal. Planners see the outcome on
-  each stop and the full proof of delivery (signature, photos, quantities, notes, location), and
-  can put a failed order back to plan.
-- Decisions (mine): failure reasons are a fixed generic list (not a setting; spec 9.x has no
-  section for them); "Nobody available to sign" is allowed when a photo is taken instead;
-  recording the first stop sets the load to out and the last one to complete; orders follow
-  (part delivered counts as delivered, with the shortfall on the POD); drivers can correct a
-  stop until the load is complete, planners any time; drivers only see loads from planned
-  onwards and can record once confirmed; a newer record for a stop replaces the old one; the
-  phone's own time is kept as when it was recorded.
-- Deferred: asset collection suggestions (8.5) and returnable assets at stops (Stage 9);
-  general "report an issue" for drivers beyond failed deliveries; customer page Orders tab;
-  other CSV imports.
+- Done: History tab with two views. "Deliveries" (`/history`) searches by customer, month or
+  date range, site, order ref, PO, delivery note, vehicle, driver and haulier in one go; results
+  show each load, its stops, the confirmation record, documents and proof of delivery, with totals
+  and CSV export; the search lives in the URL. "Assets" (`/history/assets`) is the returnable asset
+  register: where each one is, overdue first, add by number or range, mark lost/retired/back at a
+  depot/at a site, change due back, full movement history. Assets move with loads: drops go on the
+  vehicle when the load goes out, to the customer when the driver records the delivery (due back
+  after the unit type's "Due back within" days), collections come back on the vehicle when ticked
+  and everything still aboard returns to the depot when the load completes. Planners (and the
+  warehouse, for drops) assign assets on the load panel and pick sheet; drivers see them on the
+  stop and tick what they collected; collection-only stops need no name or signature.
+  ASSET_OVERDUE now uses real data; asset collection suggestions (8.5) appear in the load panel.
+  Customer page Assets tab. Standing runs (Settings): days, cut-off, start time, depot, default
+  vehicle and driver, regular sites in order; opening the plan creates any missing draft loads for
+  the week's run days (once each), and the load panel suggests orders for the run's sites received
+  before the cut-off (later ones listed separately), added in the run's site order.
+- Decisions (agreed with the user): assets live in History; due back = days per unit type;
+  planner/warehouse assign assets; standing-run loads are created when the plan is opened.
+  Mine: a deleted standing-run draft load isn't recreated; generation only runs for planners and
+  admins and only from today; "received before cut-off" uses the order's created time against the
+  cut-off on the run day (London time); a manual asset move cancels any plan for it; assets on a
+  completed load can't be corrected through the POD (move the asset instead).
+- Deferred: Today screen's overdue asset count (Stage 10); customer page Orders tab; other CSV
+  imports.
 - Not yet: emailed invitations and password reset (need Resend); GDPR export/deletion.
-- Next: **Stage 9: History and assets**.
+- Next: **Stage 10: Today and reports**.
 - Open: no hosted Supabase project yet. postcodes.io and OpenRouteService are blocked by this
   cloud environment's network policy; browser tests use `e2e/support/mock-postcodes.mjs`
   (`POSTCODES_API_URL=http://localhost:3199`) and `e2e/support/mock-ors.mjs`
@@ -59,7 +63,10 @@ Playwright builds the app and runs `next start` on port 3100 with `ENABLE_DEV_GA
 project creates "Example Doors Ltd" with admin, office, warehouse and driver users and saves their
 sessions in `e2e/.auth/` (gitignored); tests default to the admin. "Dan Driver" is linked to a
 driver with a confirmed run today (DR-4xx, `seedDriverRun`); "Rhys Relief" is a second, unlinked
-driver login for the settings test. The company is seeded with
+driver login for the settings test. Past deliveries HS-5xx (last month and the month before,
+`seedHistory`) and stillages ST-101…106 at the depot plus overdue ST-201/202 at Cotswold
+Kitchens' Cheltenham showroom (`seedAssets`). Test helpers that write go through the demo admin
+(`adminClient()`): the service role can't run the `private` schema's triggers. The company is seeded with
 realistic settings (`seedSettings` in `e2e/support/accounts.ts`), so tests that create things use
 names that don't clash with the seed.
 In the Claude Code cloud environment, Chromium is preinstalled and `@playwright/test` is pinned to
@@ -184,6 +191,25 @@ In the Claude Code cloud environment, Chromium is preinstalled and `@playwright/
 - PostgREST embeds between tables joined by two composite keys are ambiguous (e.g.
   `pod_lines → order_lines`); name the key (`order_lines!pod_lines_order_line_id_organisation_id_fkey`)
   or query separately, and check `error`.
+- `src/lib/assets/`: `options.ts` (statuses), `numbers.ts` (parse "ST-101 to ST-120"; tested),
+  `data.ts` (`loadAssetRegister`, `loadAssetMovements`: places in words). `src/components/assets/`:
+  `stop-assets.tsx` (drops and collections on a stop, used by the plan panel and warehouse),
+  `asset-picker.tsx`, `asset-status.tsx`. `src/app/(app)/plan/asset-actions.ts` (`addDrops`,
+  `addCollection`, `removeStopAsset`); `history/assets/` (register, `actions.ts`).
+- Assets DB: `assets` (status with matching place columns, enforced by checks), `asset_movements`
+  (written only by trigger on any change of place, using `app.asset_load/stop/note` settings for
+  context and `clock_timestamp()` so moves in one transaction stay in order), `stop_assets` (drop or
+  collect per stop; one pending plan per asset). `unit_types.return_days`. Functions
+  `add_collection`, `move_asset`; `record_pod(..., collected)` moves stop assets; a trigger on
+  loads moves drops on `out` and returns everything aboard on `complete`. `pods.collection_only`.
+- `src/lib/suggestions/collections.ts` (8.5) and `standing-run.ts` (cut-off filter, site order);
+  both tested and run in `adviseLoad`.
+- Standing runs DB: `standing_runs`, `standing_run_sites` (settings tables), `standing_run_days`
+  (generated days), `loads.standing_run_id`; `save_standing_run`, `generate_standing_loads`
+  (called by the plan page). `settings/standing-runs/`.
+- History: `search_history(...)` (SQL, SECURITY INVOKER) returns matching order/stop/load ids;
+  `src/lib/history/filters.ts` (URL filters, month → range; tested) and `search.ts` (details,
+  signed document links). `history/history-search.tsx`, `history-nav.tsx`.
 - `src/lib/branding.ts`: logo storage paths and signed URLs; `(app)/layout.tsx` injects the
   organisation's accent colour.
 

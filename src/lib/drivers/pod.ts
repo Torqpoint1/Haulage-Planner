@@ -16,10 +16,15 @@ export type PodDraft = {
   note: string;
   /** order line id → delivered quantity (part deliveries). */
   quantities: Record<string, number>;
+  /** Assets planned for collection here that the driver ticked as collected. */
+  collectedCount: number;
 };
 
 export type PodErrors = Partial<
-  Record<"receivedBy" | "signature" | "failureReason" | "note" | "quantities" | "photos", string>
+  Record<
+    "receivedBy" | "signature" | "failureReason" | "note" | "quantities" | "photos" | "collected",
+    string
+  >
 >;
 
 export function validatePod(draft: PodDraft, stop: Pick<RunStop, "orders">): PodErrors {
@@ -28,6 +33,12 @@ export function validatePod(draft: PodDraft, stop: Pick<RunStop, "orders">): Pod
   if (draft.outcome === "failed") {
     if (!draft.failureReason) errors.failureReason = "Choose why the delivery failed.";
     if (draft.note.trim().length < 2) errors.note = "Add a note saying what happened.";
+    return errors;
+  }
+  // A collection with nothing to deliver: no one signs, but something must come back.
+  if (!stop.orders.length) {
+    if (!draft.collectedCount)
+      errors.collected = "Tick what you collected, or record the collection as failed.";
     return errors;
   }
   if (draft.receivedBy.trim().length < 2)
@@ -71,6 +82,7 @@ export const podSubmissionSchema = z.object({
   lines: z
     .array(z.object({ orderLineId: z.uuid(), quantity: z.number().int().min(0).max(10000) }))
     .max(500),
+  collected: z.array(z.uuid()).max(100).default([]),
   recordedAt: z.iso.datetime({ offset: true }),
   location: z
     .object({

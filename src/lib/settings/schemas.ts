@@ -6,6 +6,7 @@ import {
   checkboxGroup,
   choice,
   errorsByField,
+  first,
   number,
   optionalDate,
   optionalNumber,
@@ -161,11 +162,16 @@ const unitTypeSchema = z
     must_stay_upright: checkbox,
     fragile: checkbox,
     returnable: checkbox,
+    return_days: optionalNumber("days to return", { integer: true, min: 1, max: 365 }),
     requires_two_people: checkbox,
     min_unload_method: choice(values(MIN_UNLOAD_METHODS), "an unloading method"),
     securing_notes: optionalText(1000),
   })
-  .transform((v) => ({ ...v, max_stack_height: v.stackable ? v.max_stack_height : null }));
+  .transform((v) => ({
+    ...v,
+    max_stack_height: v.stackable ? v.max_stack_height : null,
+    return_days: v.returnable ? v.return_days : null,
+  }));
 
 export const parseUnitType = (input: FormObject) => parse(unitTypeSchema, input);
 
@@ -494,3 +500,37 @@ const complianceZoneSchema = z
   });
 
 export const parseComplianceZone = (input: FormObject) => parse(complianceZoneSchema, input);
+
+// ---------------------------------------------------------------------------
+// Standing runs (6.12)
+// ---------------------------------------------------------------------------
+
+const clock = (label: string) =>
+  z.preprocess(
+    (v) => (typeof first(v) === "string" ? String(first(v)).trim().slice(0, 5) : v),
+    z
+      .string(`Enter ${label}.`)
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, `Enter ${label} as 24-hour time, e.g. 10:30.`),
+  );
+const optionalId = z.preprocess(
+  (v) => (first(v) === "" || first(v) === "none" || v === undefined ? null : first(v)),
+  z.uuid().nullable(),
+);
+
+const standingRunSchema = z.object({
+  name: text("a name for the run", 80),
+  days: checkboxGroup(values(DAYS)).refine((d) => d.length > 0, "Choose at least one day."),
+  cutoff_time: clock("the order cut-off"),
+  start_time: clock("the start time"),
+  depot_id: z.preprocess((v) => first(v), z.uuid("Choose the depot.")),
+  vehicle_id: optionalId,
+  driver_id: optionalId,
+  active: checkbox,
+  notes: optionalText(2000),
+  site_ids: z.preprocess(
+    (v) => (v === undefined ? [] : Array.isArray(v) ? v : [v]),
+    z.array(z.uuid()).min(1, "Add at least one site.").max(200),
+  ),
+});
+
+export const parseStandingRun = (input: FormObject) => parse(standingRunSchema, input);

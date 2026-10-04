@@ -86,6 +86,28 @@ export type PlanStop = {
   confirmed_at: string | null;
   confirmation_note: string;
   order_ids: string[];
+  /** Returnable assets planned onto this stop: drops go out with the delivery, collections come back. */
+  assets: PlanStopAsset[];
+};
+
+export type PlanStopAsset = {
+  asset_id: string;
+  direction: "drop" | "collect";
+  outcome: "pending" | "done" | "not_done";
+};
+
+/** A returnable asset (spec 6.11). Lost and retired ones aren't loaded for planning. */
+export type PlanAsset = {
+  id: string;
+  asset_number: string;
+  unit_type_id: string;
+  unit_type_name: string;
+  status: "at_depot" | "on_vehicle" | "at_customer";
+  depot_id: string | null;
+  customer_id: string | null;
+  site_id: string | null;
+  load_id: string | null;
+  expected_return_date: string | null;
 };
 
 export type PlanLoad = {
@@ -100,6 +122,8 @@ export type PlanLoad = {
   notes: string;
   driver_ids: string[];
   stops: PlanStop[];
+  /** Made from a standing run (spec 6.12). */
+  standing_run_id: string | null;
 };
 
 export type PlanDecision = Decision & { load_id: string; key: string; at: string };
@@ -133,6 +157,10 @@ export type PlanData = {
   legs: Legs;
   /** Warehouse progress per load (spec 9.5: visible to the planner on the load card). */
   picking: Record<string, PickProgress>;
+  /** Returnable assets at depots, on vehicles and at customers. */
+  assets: PlanAsset[];
+  /** Standing runs the week's loads came from. */
+  standingRuns: { id: string; name: string }[];
 };
 
 export type PickProgress = {

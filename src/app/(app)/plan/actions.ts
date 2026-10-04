@@ -382,3 +382,51 @@ export async function orderOptionsAction(orderId: string) {
     { ok: true; date: string; options: DeliveryOption[] } | { ok: false; error: string }
   >;
 }
+
+/**
+ * Add orders suggested by a standing run (spec 6.12), then put the stops in the
+ * run's usual site order; any other stops keep their order after them.
+ */
+export async function addStandingOrders(loadId: string, orderIds: string[]): Promise<DeleteResult> {
+  return plan(async () => {
+    if (
+      !uuid.safeParse(loadId).success ||
+      !z.array(uuid).min(1).max(100).safeParse(orderIds).success
+    )
+      return fail("Choose the orders to add.");
+    const supabase = await createClient();
+    for (const orderId of orderIds) {
+      const { error } = await supabase.rpc("add_order_to_load", {
+        target_load: loadId,
+        target_order: orderId,
+      });
+      if (error) return planningError(error);
+    }
+    const { data: load } = await supabase
+      .from("loads")
+      .select("standing_run_id, stops:load_stops(id, site_id, sequence)")
+      .eq("id", loadId)
+      .single();
+    if (load?.standing_run_id) {
+      const { data: sites } = await supabase
+        .from("standing_run_sites")
+        .select("site_id, position")
+        .eq("run_id", load.standing_run_id);
+      const pos = new Map((sites ?? []).map((s) => [s.site_id, s.position]));
+      const stops = [
+        ...((load.stops ?? []) as { id: string; site_id: string; sequence: number }[]),
+      ];
+      stops.sort(
+        (a, b) =>
+          (pos.get(a.site_id) ?? 1000 + a.sequence) - (pos.get(b.site_id) ?? 1000 + b.sequence),
+      );
+      const { error } = await supabase.rpc("reorder_stops", {
+        target_load: loadId,
+        stop_ids: stops.map((s) => s.id),
+      });
+      if (error) return planningError(error);
+    }
+    refresh();
+    return { ok: true };
+  });
+}

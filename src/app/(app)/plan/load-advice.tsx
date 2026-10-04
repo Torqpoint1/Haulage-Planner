@@ -9,7 +9,14 @@ import { toast } from "@/components/ui/toast";
 import { formatGbp, formatMiles } from "@/lib/format";
 import type { PlanData } from "@/lib/planning/types";
 import type { LoadAdvice } from "@/lib/suggestions/server";
-import { addOrderToLoad, loadAdviceAction, reorderStops, updateLoad } from "./actions";
+import {
+  addOrderToLoad,
+  addStandingOrders,
+  loadAdviceAction,
+  reorderStops,
+  updateLoad,
+} from "./actions";
+import { addCollection } from "./asset-actions";
 import type { LoadView } from "./load-card";
 import { OptionsList } from "./options-list";
 
@@ -50,7 +57,7 @@ export function LoadAdvicePanel({
     load.haulier_id,
     load.load_date,
     load.crew_size,
-    load.stops.map((s) => [s.id, s.order_ids, s.booking_slot, s.eta_from]),
+    load.stops.map((s) => [s.id, s.order_ids, s.booking_slot, s.eta_from, s.assets]),
   ]);
   const [nonce, setNonce] = useState(0);
 
@@ -107,7 +114,102 @@ export function LoadAdvicePanel({
 
   return (
     <>
-      {!locked && (advice.stopOrder || advice.gaps.length) ? (
+      {!locked && advice.standing ? (
+        <PanelSection title={`Standing run: ${advice.standing.runName}`}>
+          <div className="flex flex-col gap-3" aria-busy={loading}>
+            {advice.standing.orders.length ? (
+              <section aria-label="Orders for this run" className="flex flex-col gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-medium">
+                    Received before the {advice.standing.cutoff} cut-off
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    loading={pending}
+                    onClick={() =>
+                      run(
+                        () =>
+                          addStandingOrders(
+                            load.id,
+                            advice.standing!.orders.map((o) => o.id),
+                          ),
+                        `${advice.standing!.orders.length === 1 ? "1 order" : `${advice.standing!.orders.length} orders`} added in the run's order`,
+                      )
+                    }
+                  >
+                    <Plus aria-hidden />
+                    Add all ({advice.standing.orders.length})
+                  </Button>
+                </div>
+                <ul className="flex flex-col gap-2">
+                  {advice.standing.orders.map((o) => (
+                    <li
+                      key={o.id}
+                      className="flex min-w-0 flex-col gap-2 rounded-md border border-border p-3"
+                    >
+                      <span className="min-w-0 truncate text-sm font-medium">
+                        {o.order_ref} · {o.site_name}
+                      </span>
+                      <Reasons items={[o.reason]} />
+                      <Button
+                        size="sm"
+                        className="w-fit"
+                        loading={pending}
+                        onClick={() =>
+                          run(
+                            () => addStandingOrders(load.id, [o.id]),
+                            `${o.order_ref} added to the load`,
+                          )
+                        }
+                      >
+                        <Plus aria-hidden />
+                        Add {o.order_ref}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : (
+              <p className="text-sm text-text-muted">
+                No unplanned orders for this run&apos;s sites arrived before the{" "}
+                {advice.standing.cutoff} cut-off.
+              </p>
+            )}
+            {advice.standing.late.length ? (
+              <section aria-label="Arrived after the cut-off" className="flex flex-col gap-2">
+                <p className="text-sm font-medium">After the cut-off</p>
+                <ul className="flex flex-col gap-2">
+                  {advice.standing.late.map((o) => (
+                    <li
+                      key={o.id}
+                      className="flex min-w-0 flex-wrap items-center justify-between gap-2 text-sm"
+                    >
+                      <span className="min-w-0 truncate">
+                        {o.order_ref} · {o.site_name}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        loading={pending}
+                        onClick={() =>
+                          run(
+                            () => addStandingOrders(load.id, [o.id]),
+                            `${o.order_ref} added to the load`,
+                          )
+                        }
+                      >
+                        Add anyway
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+          </div>
+        </PanelSection>
+      ) : null}
+      {!locked && (advice.stopOrder || advice.gaps.length || advice.collections.length) ? (
         <PanelSection title="Suggestions">
           <div className="flex flex-col gap-3" aria-busy={loading}>
             {advice.stopOrder ? (
@@ -178,6 +280,50 @@ export function LoadAdvicePanel({
                       >
                         <Plus aria-hidden />
                         Add {g.orderRef}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+            {advice.collections.length ? (
+              <section aria-label="Asset collections" className="flex flex-col gap-2">
+                <p className="text-sm font-medium">Overdue assets to collect nearby</p>
+                <ul className="flex flex-col gap-2">
+                  {advice.collections.map((c) => (
+                    <li
+                      key={c.siteId}
+                      className="flex min-w-0 flex-col gap-2 rounded-md border border-border p-3"
+                    >
+                      <div className="flex min-w-0 items-baseline justify-between gap-2">
+                        <span className="min-w-0 truncate text-sm font-medium">
+                          {c.siteName} · {c.postcode}
+                        </span>
+                        <span className="num shrink-0 text-xs text-text-muted">
+                          {c.onRoute
+                            ? "already a stop"
+                            : `+${formatMiles(c.extraMiles)}${c.estimate ? " est." : ""}`}
+                        </span>
+                      </div>
+                      <p className="text-xs">{c.assets.map((a) => a.label).join(", ")}</p>
+                      <Reasons items={c.reasons} />
+                      <Button
+                        size="sm"
+                        className="w-fit"
+                        loading={pending}
+                        onClick={() =>
+                          run(
+                            () =>
+                              addCollection(
+                                load.id,
+                                c.assets.map((a) => a.id),
+                              ),
+                            `Collection from ${c.siteName} added`,
+                          )
+                        }
+                      >
+                        <Plus aria-hidden />
+                        {c.onRoute ? "Collect at this stop" : "Add collection stop"}
                       </Button>
                     </li>
                   ))}

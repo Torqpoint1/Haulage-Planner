@@ -73,9 +73,31 @@ export function PickSheetPrint({ load }: { load: SheetLoad }) {
               )}
             </tbody>
           </table>
+          <AssetLines assets={load.stops.find((x) => x.id === section.stop.id)?.assets ?? []} />
         </section>
       ))}
     </>
+  );
+}
+
+/** Returnable assets on a stop, for the paper sheets. */
+function AssetLines({ assets }: { assets: SheetLoad["stops"][number]["assets"] }) {
+  const drops = assets.filter((a) => a.direction === "drop").map((a) => a.label);
+  const collects = assets.filter((a) => a.direction === "collect").map((a) => a.label);
+  if (!drops.length && !collects.length) return null;
+  return (
+    <p className="print-assets">
+      {drops.length ? (
+        <>
+          <strong>Returnable assets to send:</strong> {drops.join(", ")}.{" "}
+        </>
+      ) : null}
+      {collects.length ? (
+        <>
+          <strong>Collect:</strong> {collects.join(", ")}.
+        </>
+      ) : null}
+    </p>
   );
 }
 
@@ -180,6 +202,7 @@ export function RunSheetPrint({ load }: { load: SheetLoad }) {
                 )}
               </tbody>
             </table>
+            <AssetLines assets={stop.assets} />
             <div className="print-sign">
               <div>Received by (name)</div>
               <div>Signature</div>
@@ -256,6 +279,7 @@ export function DeliveryNotesPrint({ load }: { load: SheetLoad }) {
               )}
             </tbody>
           </table>
+          <AssetLines assets={stop.assets} />
           <p className="sub" style={{ marginTop: "4mm" }}>
             Received in good condition, except as noted:
           </p>

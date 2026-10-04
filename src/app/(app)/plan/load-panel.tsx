@@ -61,6 +61,7 @@ import {
 import { LoadAdvicePanel } from "./load-advice";
 import { PickingLine, SpaceBar, WeightBar, type LoadView } from "./load-card";
 import { OutcomeBadge, PodModal } from "./pod-modal";
+import { StopAssets } from "@/components/assets/stop-assets";
 
 /** The next step for each status, and the way back where there is one. */
 const NEXT: Partial<Record<LoadStatus, { to: LoadStatus; label: string }>> = {
@@ -76,6 +77,24 @@ const BACK: Partial<Record<LoadStatus, { to: LoadStatus; label: string }>> = {
 };
 
 export type StopFocus = { stopId: string; field: string } | null;
+
+/** Assets in a place and not already planned onto a stop this week (the database checks the rest). */
+function freeAssets(data: PlanData, status: "at_depot" | "at_customer") {
+  const planned = new Set(
+    data.loads.flatMap((l) =>
+      l.stops.flatMap((s) =>
+        s.assets.filter((a) => a.outcome === "pending").map((a) => a.asset_id),
+      ),
+    ),
+  );
+  return data.assets.filter((a) => a.status === status && !planned.has(a.id));
+}
+const choice = (a: PlanData["assets"][number]) => ({
+  id: a.id,
+  label: a.asset_number,
+  group: a.unit_type_name,
+  dueBack: a.expected_return_date,
+});
 
 function StopForm({
   stop,
@@ -358,6 +377,30 @@ function StopRow({
           </li>
         ))}
       </ul>
+
+      {!orders.length ? <p className="text-sm text-text-muted">Collection only</p> : null}
+
+      <StopAssets
+        loadId={view.load.id}
+        stopId={stop.id}
+        siteName={site?.name ?? "this site"}
+        hasOrders={orders.length > 0}
+        assets={stop.assets.map((x) => {
+          const a = data.assets.find((y) => y.id === x.asset_id);
+          return {
+            id: x.asset_id,
+            label: a ? `${a.unit_type_name} ${a.asset_number}` : "Asset",
+            direction: x.direction,
+            outcome: x.outcome,
+          };
+        })}
+        depotAssets={freeAssets(data, "at_depot").map(choice)}
+        siteAssets={freeAssets(data, "at_customer")
+          .filter((a) => a.site_id === stop.site_id)
+          .map(choice)}
+        canDrop={canEdit && !["out", "complete"].includes(view.load.status)}
+        canCollect={canEdit && !locked}
+      />
 
       <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-text-muted">
         {stop.booking_ref ? (

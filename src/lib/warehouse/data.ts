@@ -1,4 +1,5 @@
 import "server-only";
+import type { AssetChoice, StopAssetView } from "@/components/assets/stop-assets";
 import { logoUrl } from "@/lib/branding";
 import { buildContext } from "@/lib/planning/build";
 import { loadPlanData } from "@/lib/planning/data";
@@ -37,6 +38,8 @@ export type SheetLoad = {
     bookingSlot: string | null;
     contacts: { name: string; phone: string }[];
     instructions: string[];
+    /** Returnable assets going out with this drop or coming back from it. */
+    assets: StopAssetView[];
   })[];
   /** Load order: last drop first. */
   sections: PickSection[];
@@ -48,6 +51,8 @@ export type SheetLoad = {
 export type SheetData = {
   date: string;
   loads: SheetLoad[];
+  /** Returnable assets at a depot and not yet planned, for sending with a delivery. */
+  depotAssets: AssetChoice[];
   organisation: { name: string; logo: string | null };
 };
 
@@ -132,9 +137,20 @@ export async function loadSheets(date: string, onlyLoadId?: string): Promise<She
   for (const l of linesRes.data ?? [])
     linesByOrder.set(l.order_id, [...(linesByOrder.get(l.order_id) ?? []), l]);
   const clock = { now: new Date(), today: londonToday() };
+  const assetById = new Map(data.assets.map((a) => [a.id, a]));
+  const plannedAssets = new Set(
+    data.loads.flatMap((l) =>
+      l.stops.flatMap((st) =>
+        st.assets.filter((a) => a.outcome === "pending").map((a) => a.asset_id),
+      ),
+    ),
+  );
 
   return {
     date,
+    depotAssets: data.assets
+      .filter((a) => a.status === "at_depot" && !plannedAssets.has(a.id))
+      .map((a) => ({ id: a.id, label: a.asset_number, group: a.unit_type_name })),
     organisation: { name: org?.name ?? "", logo: await logoUrl(org?.logo_path ?? null) },
     loads: loads.map((load) => {
       const ctx = buildContext(load, data, clock);
@@ -182,6 +198,15 @@ export async function loadSheets(date: string, onlyLoadId?: string): Promise<She
           instructions: [
             ...new Set(orders.map((o) => o.delivery_instructions.trim()).filter(Boolean)),
           ],
+          assets: s.assets.map((x) => {
+            const a = assetById.get(x.asset_id);
+            return {
+              id: x.asset_id,
+              label: a ? `${a.unit_type_name} ${a.asset_number}` : "Asset",
+              direction: x.direction,
+              outcome: x.outcome,
+            };
+          }),
         };
       });
       const { sections, totals } = pickSheet(stops, units, picks);

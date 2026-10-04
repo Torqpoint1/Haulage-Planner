@@ -1,34 +1,34 @@
-import { History, Search } from "lucide-react";
 import type { Metadata } from "next";
-import { requireArea } from "@/lib/auth/session";
+import { connection } from "next/server";
 import { PageContainer, PageHeader } from "@/components/shell/page";
-import { Card } from "@/components/ui/card";
-import { EmptyState } from "@/components/ui/empty-state";
-import { Input } from "@/components/ui/input";
+import { requireArea } from "@/lib/auth/session";
+import { londonToday } from "@/lib/format";
+import { parseFilters } from "@/lib/history/filters";
+import { loadHistoryChoices, searchHistory } from "@/lib/history/search";
+import { HistoryNav } from "./history-nav";
+import { HistorySearch } from "./history-search";
 
 export const metadata: Metadata = { title: "History" };
 
-export default async function HistoryPage() {
+export default async function HistoryPage({ searchParams }: PageProps<"/history">) {
   await requireArea("history");
+  await connection();
+  const filters = parseFilters(await searchParams);
+  const [results, choices] = await Promise.all([searchHistory(filters), loadHistoryChoices()]);
   return (
-    <PageContainer>
+    <PageContainer className="flex flex-col gap-6">
       <PageHeader
         title="History"
-        description="Find any past delivery with its confirmation, documents and proof of delivery."
+        description="Find any delivery with its confirmation, documents and proof of delivery."
       />
-      <Input
-        leadingIcon={<Search />}
-        placeholder="Customer, site, order ref, PO, delivery note, vehicle, driver or haulier"
-        aria-label="Search history"
-        disabled
+      <HistoryNav />
+      <HistorySearch
+        key={JSON.stringify(filters)}
+        filters={filters}
+        results={results}
+        choices={choices}
+        today={londonToday()}
       />
-      <Card>
-        <EmptyState
-          icon={History}
-          title="No deliveries yet"
-          description="Completed loads are kept here so you can answer “what did we send this customer in March?” with one search."
-        />
-      </Card>
     </PageContainer>
   );
 }

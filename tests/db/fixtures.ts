@@ -264,6 +264,12 @@ export const PLANNING_TABLES: { table: string; patch: Record<string, unknown> }[
   { table: "route_legs", patch: { miles: 0 } },
   { table: "pick_lines", patch: { picked: false } },
   { table: "pods", patch: { received_by: "Hijacked" } },
+  { table: "assets", patch: { notes: "Hijacked" } },
+  { table: "asset_movements", patch: { note: "Hijacked" } },
+  { table: "stop_assets", patch: { outcome: "done" } },
+  { table: "standing_runs", patch: { name: "Hijacked run" } },
+  { table: "standing_run_sites", patch: { position: 99 } },
+  { table: "standing_run_days", patch: { run_date: "2030-01-01" } },
   { table: "pod_lines", patch: { delivered_quantity: 0 } },
 ];
 
@@ -327,4 +333,75 @@ export async function uploadPodFile(client: SupabaseClient, stopId: string, name
     .upload(path, new Blob(["image"]), { contentType: "image/png" });
   if (error) throw new Error(`upload: ${error.message}`);
   return path;
+}
+
+export type AssetFixture = { unitTypeId: string; atDepot: string; atCustomer: string };
+
+/** A returnable unit type, one asset at the depot and one at the customer, planned for collection. */
+export async function createAssets(
+  client: SupabaseClient,
+  label: string,
+  settings: SettingsFixture,
+  customer: CustomerFixture,
+  load: LoadFixture,
+): Promise<AssetFixture> {
+  const unitTypeId = await insert(client, "unit_types", {
+    name: `Stillage ${label}`,
+    short_code: `${label.slice(0, 2).toUpperCase()}ST`,
+    length_mm: 1200,
+    width_mm: 1000,
+    height_mm: 1500,
+    returnable: true,
+    return_days: 28,
+  });
+  const atDepot = await insert(client, "assets", {
+    unit_type_id: unitTypeId,
+    asset_number: `${label.toUpperCase()}-S1`,
+    depot_id: settings.depotId,
+  });
+  const atCustomer = await insert(client, "assets", {
+    unit_type_id: unitTypeId,
+    asset_number: `${label.toUpperCase()}-S2`,
+    status: "at_customer",
+    customer_id: customer.customerId,
+    site_id: customer.siteId,
+    dropped_on: "2026-09-01",
+    expected_return_date: "2026-09-29",
+  });
+  const { error } = await client.rpc("add_collection", {
+    target_load: load.loadId,
+    asset_ids: [atCustomer],
+  });
+  if (error) throw new Error(`add_collection: ${error.message}`);
+  return { unitTypeId, atDepot, atCustomer };
+}
+
+/** A standing run every day of the week, and this week's draft loads for it. */
+export async function createStandingRun(
+  client: SupabaseClient,
+  label: string,
+  settings: SettingsFixture,
+  customer: CustomerFixture,
+) {
+  const { data: runId, error } = await client.rpc("save_standing_run", {
+    target_id: null,
+    run: {
+      name: `${label} daily`,
+      days: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+      cutoff_time: "12:00",
+      start_time: "07:00",
+      depot_id: settings.depotId,
+      vehicle_id: settings.vehicleId,
+      driver_id: settings.driverId,
+    },
+    site_ids: [customer.siteId],
+  });
+  if (error) throw new Error(`save_standing_run: ${error.message}`);
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date());
+  const { error: genError } = await client.rpc("generate_standing_loads", {
+    from_date: today,
+    to_date: today,
+  });
+  if (genError) throw new Error(`generate_standing_loads: ${genError.message}`);
+  return runId as string;
 }

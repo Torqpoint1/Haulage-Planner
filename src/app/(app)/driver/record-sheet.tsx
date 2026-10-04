@@ -79,6 +79,7 @@ export function RecordSheet({
   const [reason, setReason] = useState<string>("");
   const [note, setNote] = useState("");
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const [collected, setCollected] = useState<Set<string>>(new Set());
   const [errors, setErrors] = useState<PodErrors>({});
   const [saving, setSaving] = useState(false);
   const pad = useRef<SignaturePadHandle>(null);
@@ -94,6 +95,15 @@ export function RecordSheet({
 
   const lines = stop.orders.flatMap((o) => o.lines.map((l) => ({ ...l, ref: o.order_ref })));
   const failed = outcome === "failed";
+  const collects = stop.assets.filter((a) => a.direction === "collect");
+  const drops = stop.assets.filter((a) => a.direction === "drop");
+  // Nothing to deliver, only assets to bring back: no one signs for anything.
+  const collectionOnly = !stop.orders.length;
+  const outcomes = collectionOnly
+    ? OUTCOMES.filter((o) => o.value !== "part_delivered").map((o) =>
+        o.value === "delivered" ? { ...o, label: "Collected" } : o,
+      )
+    : OUTCOMES;
 
   async function addPhotos(files: FileList | null) {
     if (!files?.length) return;
@@ -122,6 +132,7 @@ export function RecordSheet({
       failureReason: reason || null,
       note,
       quantities,
+      collectedCount: collected.size,
     };
     const found = validatePod(draft, stop);
     setErrors(found);
@@ -145,6 +156,7 @@ export function RecordSheet({
                   ? l.quantity
                   : (quantities[l.id] ?? l.quantity),
           })),
+          collected: failed ? [] : [...collected],
           recordedAt: new Date().toISOString(),
           location: typeof location === "object" ? location : null,
         },
@@ -161,7 +173,7 @@ export function RecordSheet({
       open={open}
       onOpenChange={onOpenChange}
       title={stop.site.name}
-      description={`Drop ${stop.sequence} · ${stop.site.postcode}`}
+      description={`${collectionOnly ? "Collection" : "Drop"} ${stop.sequence} · ${stop.site.postcode}`}
       footer={
         <>
           <Button size="lg" onClick={() => onOpenChange(false)}>
@@ -174,8 +186,12 @@ export function RecordSheet({
       }
     >
       <div className="flex flex-col gap-6">
-        <div role="radiogroup" aria-label="Outcome" className="grid grid-cols-3 gap-2">
-          {OUTCOMES.map((o) => {
+        <div
+          role="radiogroup"
+          aria-label="Outcome"
+          className={cn("grid gap-2", collectionOnly ? "grid-cols-2" : "grid-cols-3")}
+        >
+          {outcomes.map((o) => {
             const Icon = OUTCOME_ICON[o.value];
             const selected = outcome === o.value;
             return (
@@ -229,8 +245,89 @@ export function RecordSheet({
               />
             </Field>
           </>
+        ) : collectionOnly ? (
+          <>
+            {collects.length ? (
+              <fieldset className="flex min-w-0 flex-col gap-2">
+                <legend className="mb-1 text-sm font-medium">
+                  Collected{collectionOnly ? " *" : ""}
+                </legend>
+                {collects.map((a) => (
+                  <Checkbox
+                    key={a.id}
+                    size="lg"
+                    checked={collected.has(a.id)}
+                    onCheckedChange={(v) => {
+                      setCollected((c) => {
+                        const next = new Set(c);
+                        if (v === true) next.add(a.id);
+                        else next.delete(a.id);
+                        return next;
+                      });
+                      setErrors((e) => ({ ...e, collected: undefined }));
+                    }}
+                    label={a.label}
+                  />
+                ))}
+                {errors.collected ? (
+                  <p role="alert" className="text-sm text-danger-fg">
+                    {errors.collected}
+                  </p>
+                ) : null}
+              </fieldset>
+            ) : null}
+            {drops.length ? (
+              <p className="text-sm">
+                <span className="font-medium">Leave with the delivery:</span>{" "}
+                {drops.map((a) => a.label).join(", ")}
+              </p>
+            ) : null}
+            <Field label="Notes" hint="Optional">
+              <Textarea
+                value={note}
+                maxLength={2000}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="e.g. One stillage left; customer still using it"
+              />
+            </Field>
+          </>
         ) : (
           <>
+            {collects.length ? (
+              <fieldset className="flex min-w-0 flex-col gap-2">
+                <legend className="mb-1 text-sm font-medium">
+                  Collected{collectionOnly ? " *" : ""}
+                </legend>
+                {collects.map((a) => (
+                  <Checkbox
+                    key={a.id}
+                    size="lg"
+                    checked={collected.has(a.id)}
+                    onCheckedChange={(v) => {
+                      setCollected((c) => {
+                        const next = new Set(c);
+                        if (v === true) next.add(a.id);
+                        else next.delete(a.id);
+                        return next;
+                      });
+                      setErrors((e) => ({ ...e, collected: undefined }));
+                    }}
+                    label={a.label}
+                  />
+                ))}
+                {errors.collected ? (
+                  <p role="alert" className="text-sm text-danger-fg">
+                    {errors.collected}
+                  </p>
+                ) : null}
+              </fieldset>
+            ) : null}
+            {drops.length ? (
+              <p className="text-sm">
+                <span className="font-medium">Leave with the delivery:</span>{" "}
+                {drops.map((a) => a.label).join(", ")}
+              </p>
+            ) : null}
             <Field label="Received by" required error={errors.receivedBy}>
               <Input
                 value={receivedBy}

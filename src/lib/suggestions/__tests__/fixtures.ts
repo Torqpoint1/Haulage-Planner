@@ -126,6 +126,7 @@ export function emptyLoad(over: Partial<PlanLoad> = {}): PlanLoad {
     status: "planned",
     notes: "",
     driver_ids: [],
+    standing_run_id: null,
     stops: [],
     ...over,
   };
@@ -151,6 +152,7 @@ export const stopFor = (
   confirmed_at: null,
   confirmation_note: "",
   order_ids: orderIds,
+  assets: [],
   ...over,
 });
 
@@ -179,6 +181,8 @@ export function planData(over: Partial<PlanData> = {}): PlanData {
     decisions: [],
     legs: {},
     picking: {},
+    standingRuns: [],
+    assets: [],
     ...over,
   };
 }

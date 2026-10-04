@@ -90,6 +90,7 @@ function draftLoad(
     status: "draft",
     notes: "",
     driver_ids: [],
+    standing_run_id: null,
     stops: [...bySite].map(([siteId, ids], i) => ({
       id: `${key}-stop-${i}`,
       sequence: i + 1,
@@ -105,6 +106,7 @@ function draftLoad(
       confirmed_at: null,
       confirmation_note: "",
       order_ids: ids,
+      assets: [],
     })),
   };
 }

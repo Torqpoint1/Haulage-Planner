@@ -42,6 +42,7 @@ export async function recordPod(input: unknown): Promise<PodResult> {
     latitude: p.location?.latitude ?? null,
     longitude: p.location?.longitude ?? null,
     accuracy_m: p.location?.accuracy ?? null,
+    collected: p.collected,
   });
   if (error) {
     // Our own plain-English messages; only a missing upload is worth retrying.

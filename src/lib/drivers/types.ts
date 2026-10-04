@@ -78,6 +78,8 @@ export type RunStop = {
   /** Handling notes across everything for this stop. */
   handling: string[];
   orders: RunOrder[];
+  /** Returnable assets: drops go off with the delivery, collections come back. */
+  assets: { id: string; label: string; direction: "drop" | "collect" }[];
   pod: PodSummary | null;
 };
 

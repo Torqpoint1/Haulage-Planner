@@ -41,6 +41,7 @@ const signed: PodDraft = {
   failureReason: null,
   note: "",
   quantities: {},
+  collectedCount: 0,
 };
 
 describe("validatePod", () => {
@@ -82,6 +83,15 @@ describe("validatePod", () => {
     expect(
       validatePod({ ...failed, failureReason: "site_closed", note: "Gates locked" }, stop),
     ).toEqual({});
+  });
+
+  it("a collection-only stop needs something collected, not a name or signature", () => {
+    const collection = { orders: [] };
+    const draft = { ...signed, receivedBy: "", hasSignature: false };
+    expect(validatePod(draft, collection)).toEqual({
+      collected: "Tick what you collected, or record the collection as failed.",
+    });
+    expect(validatePod({ ...draft, collectedCount: 2 }, collection)).toEqual({});
   });
 
   it("limits photos", () => {

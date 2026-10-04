@@ -72,6 +72,7 @@ function stopState(stop: RunStop, queued: QueuedPod | undefined): StopState {
 
 function summarise(outcome: Outcome, receivedBy: string, reason: string | null, at: string) {
   const time = formatTime(at);
+  if (outcome !== "failed" && !receivedBy) return `Done at ${time}`;
   if (outcome === "failed") {
     const label = FAILURE_REASONS.find((r) => r.value === reason)?.label ?? "Failed";
     return `Failed at ${time}: ${label}`;
@@ -163,6 +164,19 @@ function StopCard({
           </ul>
         </section>
       ) : null}
+      {stop.assets.length ? (
+        <section className="flex flex-col gap-2">
+          <h4 className="text-xs font-semibold text-text-muted uppercase">Returnable assets</h4>
+          <ul aria-label="Returnable assets" className="flex flex-col gap-1 text-sm">
+            {stop.assets.map((a) => (
+              <li key={a.id}>
+                <span className="font-medium">{a.direction === "drop" ? "Leave" : "Collect"}:</span>{" "}
+                {a.label}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       {stop.handling.length ? (
         <section className="flex flex-col gap-2">
           <h4 className="text-xs font-semibold text-text-muted uppercase">Handling</h4>
@@ -175,7 +189,7 @@ function StopCard({
           </ul>
         </section>
       ) : null}
-      <section className="flex flex-col gap-2">
+      <section className={cn("flex flex-col gap-2", !stop.orders.length && "hidden")}>
         <h4 className="text-xs font-semibold text-text-muted uppercase">
           {plural(stop.orders.length, "order")}
         </h4>
@@ -261,6 +275,17 @@ function StopCard({
             <Button size="lg" onClick={() => onRecord(stop, state.outcome ?? "delivered")}>
               Change what was recorded
             </Button>
+          ) : !stop.orders.length ? (
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+              <Button size="lg" variant="primary" onClick={() => onRecord(stop, "delivered")}>
+                <CircleCheck aria-hidden />
+                Collected
+              </Button>
+              <Button size="lg" onClick={() => onRecord(stop, "failed")}>
+                <OctagonAlert aria-hidden />
+                Couldn&apos;t collect
+              </Button>
+            </div>
           ) : (
             <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
               <Button size="lg" variant="primary" onClick={() => onRecord(stop, "delivered")}>

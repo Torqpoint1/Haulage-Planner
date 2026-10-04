@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { PageContainer } from "@/components/shell/page";
-import { can } from "@/lib/auth/roles";
+import { loadAssetRegister } from "@/lib/assets/data";
+import { can, canAccess } from "@/lib/auth/roles";
 import { requireArea } from "@/lib/auth/session";
 import type { Contact, Customer, Site } from "@/lib/customers/types";
 import { createClient } from "@/lib/supabase/server";
@@ -28,6 +29,7 @@ export default async function CustomerPage({ params, searchParams }: PageProps<"
         .single(),
     ]);
   if (!customer) notFound();
+  const { assets } = await loadAssetRegister({ customerId: id });
 
   return (
     <PageContainer>
@@ -37,6 +39,8 @@ export default async function CustomerPage({ params, searchParams }: PageProps<"
         contacts={(contacts ?? []) as Contact[]}
         staleDays={org?.site_info_stale_days ?? 180}
         canEdit={can(session.membership.role, "customers.edit")}
+        assets={assets}
+        canSeeAssets={canAccess(session.membership.role, "history")}
         initialTab={typeof tab === "string" ? tab : "sites"}
       />
     </PageContainer>

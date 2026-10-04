@@ -11,6 +11,7 @@ const SETTINGS_SCREENS = [
   ["/settings/drivers", "Drivers"],
   ["/settings/hauliers", "Hauliers & rate cards"],
   ["/settings/zones", "Postcode zones"],
+  ["/settings/standing-runs", "Standing runs"],
   ["/settings/thresholds", "Warning thresholds"],
   ["/settings/compliance-zones", "Compliance zones"],
 ] as const;
@@ -302,6 +303,36 @@ for (const theme of THEMES) {
           .click();
         await expect(page.getByRole("dialog", { name: "Flag a shortage" })).toBeVisible();
         await page.screenshot({ path: `screenshots/${theme}/${width}/state-shortage.png` });
+      });
+
+      test("history and asset screens", async ({ page }) => {
+        await page.goto("/history?q=HS-50");
+        await expect(page.getByRole("region", { name: "Results" })).toBeVisible();
+        await settle(page);
+        await expectNoOverflow(page);
+        await page.screenshot({
+          path: `screenshots/${theme}/${width}/history-results.png`,
+          fullPage: true,
+        });
+        await page.goto("/history/assets");
+        await expect(page.getByRole("heading", { level: 1, name: "History" })).toBeVisible();
+        await settle(page);
+        await expectNoOverflow(page);
+        await page.screenshot({
+          path: `screenshots/${theme}/${width}/history-assets.png`,
+          fullPage: true,
+        });
+        await page.getByText("ST-202", { exact: true }).locator("visible=true").first().click();
+        await expect(page.getByRole("dialog", { name: "ST-202" })).toBeVisible();
+        await settle(page);
+        await page.screenshot({ path: `screenshots/${theme}/${width}/state-asset-panel.png` });
+        await page.keyboard.press("Escape");
+        await page.goto("/settings/standing-runs");
+        await page.getByRole("button", { name: "Add standing run" }).first().click();
+        await expect(page.getByRole("dialog", { name: "Add standing run" })).toBeVisible();
+        await page.screenshot({
+          path: `screenshots/${theme}/${width}/state-standing-run-form.png`,
+        });
       });
 
       test("users and roles", async ({ page }) => {

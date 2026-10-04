@@ -212,3 +212,9 @@ html:has(.print-page) body {
     padding: 0;
   }
 }
+
+.print-assets {
+  margin: 2mm 0 0;
+  font-size: 9pt;
+  overflow-wrap: anywhere;
+}

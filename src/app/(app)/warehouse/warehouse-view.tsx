@@ -32,6 +32,7 @@ import { optionFor } from "@/lib/orders/options";
 import { LOAD_STATUSES } from "@/lib/planning/types";
 import type { SheetData, SheetLoad } from "@/lib/warehouse/data";
 import { NOT_TICKED, type PickLine, type PickState } from "@/lib/warehouse/pick-sheet";
+import { StopAssets } from "@/components/assets/stop-assets";
 import { tickLine } from "./actions";
 
 const iso = (d: Date) => format(d, "yyyy-MM-dd");
@@ -188,7 +189,17 @@ function LineRow({
   );
 }
 
-function PickSheet({ load, canTick }: { load: SheetLoad; canTick: boolean }) {
+function PickSheet({
+  load,
+  canTick,
+  canAssign,
+  depotAssets,
+}: {
+  load: SheetLoad;
+  canTick: boolean;
+  canAssign: boolean;
+  depotAssets: SheetData["depotAssets"];
+}) {
   const [, start] = useTransition();
   // Ticks show straight away; the server confirms them (or puts them back).
   const [local, setLocal] = useState<Record<string, PickState>>({});
@@ -313,6 +324,22 @@ function PickSheet({ load, canTick }: { load: SheetLoad; canTick: boolean }) {
                   </ul>
                 </div>
               ))}
+              {(() => {
+                const stop = load.stops.find((x) => x.id === section.stop.id);
+                return stop ? (
+                  <StopAssets
+                    loadId={load.id}
+                    stopId={stop.id}
+                    siteName={stop.site.name}
+                    hasOrders={stop.orders.length > 0}
+                    assets={stop.assets}
+                    depotAssets={depotAssets}
+                    siteAssets={[]}
+                    canDrop={canAssign && !["out", "complete"].includes(load.status)}
+                    canCollect={false}
+                  />
+                ) : null;
+              })()}
             </Card>
           </li>
         ))}
@@ -361,11 +388,13 @@ export function WarehouseView({
   today,
   selectedLoadId,
   canTick,
+  canAssign,
 }: {
   data: SheetData;
   today: string;
   selectedLoadId: string | null;
   canTick: boolean;
+  canAssign: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -460,7 +489,13 @@ export function WarehouseView({
           </nav>
           {selected ? (
             <div className="min-w-0 flex-1">
-              <PickSheet key={selected.id} load={selected} canTick={canTick} />
+              <PickSheet
+                key={selected.id}
+                load={selected}
+                canTick={canTick}
+                canAssign={canAssign}
+                depotAssets={data.depotAssets}
+              />
             </div>
           ) : null}
         </div>

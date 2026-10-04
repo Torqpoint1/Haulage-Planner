@@ -32,6 +32,7 @@ export type UnitType = {
   must_stay_upright: boolean;
   fragile: boolean;
   returnable: boolean;
+  return_days: number | null;
   requires_two_people: boolean;
   min_unload_method: string;
   securing_notes: string;
@@ -45,7 +46,7 @@ function Rules({ u }: { u: UnitType }) {
   const rules = [
     u.must_stay_upright && "Upright",
     u.fragile && "Fragile",
-    u.returnable && "Returnable",
+    u.returnable && (u.return_days ? `Returnable (${u.return_days} days)` : "Returnable"),
     u.requires_two_people && "Two-person",
     u.stackable && `Stacks ${u.max_stack_height ?? ""}`.trim(),
     u.min_unload_method !== "any" && labelFor(MIN_UNLOAD_METHODS, u.min_unload_method),
@@ -166,6 +167,21 @@ function Fields({ row }: { row: UnitType | null }) {
           description="Tracked when left at a customer, e.g. stillages and A-frames."
           defaultChecked={u?.returnable}
         />
+        <FieldRow>
+          <FormField
+            name="return_days"
+            label="Due back within"
+            hint="For returnable assets: days after dropping before it's overdue. Leave blank for no limit."
+          >
+            <Input
+              name="return_days"
+              inputMode="numeric"
+              defaultValue={u?.return_days ?? ""}
+              trailing="days"
+              className="num"
+            />
+          </FormField>
+        </FieldRow>
         <Toggle
           name="requires_two_people"
           label="Needs two people to handle"

@@ -15,6 +15,13 @@ export function unitsText(orders: PlanOrder[], unitTypes: Record<string, RuleUni
 
 /** What the load card leads with: the vehicle, the haulier, or that neither is chosen yet. */
 export function loadTitle(load: PlanLoad, data: PlanData): { title: string; subtitle: string } {
+  const { title, subtitle } = baseTitle(load, data);
+  // A load made from a standing run says which (spec 6.12).
+  const run = data.standingRuns?.find((r) => r.id === load.standing_run_id);
+  return { title, subtitle: run ? `${run.name} · ${subtitle}` : subtitle };
+}
+
+function baseTitle(load: PlanLoad, data: PlanData): { title: string; subtitle: string } {
   const vehicle = data.vehicles.find((v) => v.id === load.vehicle_id);
   if (vehicle)
     return {

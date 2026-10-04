@@ -5,6 +5,7 @@ import { can } from "@/lib/auth/roles";
 import { requireArea } from "@/lib/auth/session";
 import { fromIsoDate, londonToday } from "@/lib/format";
 import { loadPlanData } from "@/lib/planning/data";
+import { createClient } from "@/lib/supabase/server";
 import { PlanBoard } from "./plan-board";
 
 export const metadata: Metadata = { title: "Plan" };
@@ -21,8 +22,17 @@ export default async function PlanPage({ searchParams }: PageProps<"/plan">) {
   const monday = startOfWeek(fromIsoDate(anchor), { weekStartsOn: 1 });
   const from = iso(monday);
   const to = iso(addDays(monday, 6));
-  const data = await loadPlanData(from, to);
   const role = session.membership.role;
+  // Standing runs: any run days this week without their draft load get one (spec 6.12).
+  if (can(role, "loads.edit")) {
+    const supabase = await createClient();
+    const { error } = await supabase.rpc("generate_standing_loads", {
+      from_date: from,
+      to_date: to,
+    });
+    if (error) console.error("Standing runs:", error.message);
+  }
+  const data = await loadPlanData(from, to);
   const day = isIso(params.day) && params.day >= from && params.day <= to ? params.day : null;
 
   return (

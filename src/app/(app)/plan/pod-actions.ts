@@ -9,12 +9,13 @@ import type { DeleteResult } from "@/lib/settings/result";
 import { describeDbError, withCapability } from "@/lib/settings/save";
 import { createClient } from "@/lib/supabase/server";
 
-/** Proof of delivery for a stop. Anyone who can see the plan can see it. */
+/** Proof of delivery for a stop. Anyone who can see the plan or the history can see it. */
 export async function podDetailsAction(
   stopId: string,
 ): Promise<{ ok: true; pod: PodDetails | null } | { ok: false; error: string }> {
   const session = await requireMember();
-  if (!canAccess(session.membership.role, "plan")) {
+  const role = session.membership.role;
+  if (!canAccess(role, "plan") && !canAccess(role, "history")) {
     return { ok: false, error: "You don't have access to that." };
   }
   if (!z.uuid().safeParse(stopId).success) return { ok: false, error: "That stop doesn't exist." };

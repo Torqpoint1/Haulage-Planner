@@ -1130,3 +1130,460 @@ describe("drivers record proof of delivery on their own loads (spec 3, 6.10, 9.8
     expect(pods).toEqual([{ received_by: "Sam Smith" }]);
   });
 });
+
+describe("returnable assets move with loads (spec 6.11)", () => {
+  let settings: Awaited<ReturnType<typeof createSettings>>;
+  let near: Awaited<ReturnType<typeof createCustomer>>;
+  let far: Awaited<ReturnType<typeof createCustomer>>;
+  let stillage: string;
+  let plain: string;
+  const planner = () => member(org, "planner").client;
+  const driver = () => member(org, "driver").client;
+  let n = 0;
+
+  beforeAll(async () => {
+    // The driver login is already linked to the POD tests' driver; reuse it.
+    const { data: linked } = await service
+      .from("drivers")
+      .select("id")
+      .eq("user_id", member(org, "driver").id)
+      .maybeSingle();
+    settings = await createSettings(
+      org.admin.client,
+      "assets",
+      linked ? undefined : member(org, "driver").id,
+    );
+    if (linked) settings.driverId = linked.id;
+    near = await createCustomer(org.admin.client, "assets-near");
+    far = await createCustomer(org.admin.client, "assets-far");
+    const { data: s } = await org.admin.client
+      .from("unit_types")
+      .insert({
+        name: "Stillage",
+        short_code: "STL",
+        length_mm: 1200,
+        width_mm: 1000,
+        height_mm: 1500,
+        returnable: true,
+        return_days: 28,
+      })
+      .select("id")
+      .single();
+    stillage = s!.id;
+    plain = settings.unitTypeId;
+  });
+
+  async function asset(status: "at_depot" | "at_customer" = "at_depot", site = far) {
+    n += 1;
+    const row =
+      status === "at_depot"
+        ? { depot_id: settings.depotId }
+        : {
+            status,
+            customer_id: site.customerId,
+            site_id: site.siteId,
+            dropped_on: "2026-08-01",
+            expected_return_date: "2026-08-29",
+          };
+    const { data, error } = await planner()
+      .from("assets")
+      .insert({ unit_type_id: stillage, asset_number: `ST-${n}`, ...row })
+      .select("id")
+      .single();
+    if (error) throw error;
+    return data.id as string;
+  }
+
+  /** A confirmed load with one delivery to `near`, the driver on it. */
+  async function load(ref: string) {
+    const { data: l } = await planner()
+      .from("loads")
+      .insert({ load_date: "2026-10-12", depot_id: settings.depotId })
+      .select("id")
+      .single();
+    await planner().from("load_drivers").insert({ load_id: l!.id, driver_id: settings.driverId });
+    const { data: orderId } = await planner().rpc("save_order", {
+      target_order_id: null,
+      order_data: {
+        customer_id: near.customerId,
+        site_id: near.siteId,
+        order_ref: ref,
+        required_date: "2026-10-12",
+      },
+      lines: [{ unit_type_id: plain, quantity: 2, weight_per_unit_kg: 100 }],
+    });
+    const { data: stopId } = await planner().rpc("add_order_to_load", {
+      target_load: l!.id,
+      target_order: orderId,
+    });
+    return { loadId: l!.id as string, stopId: stopId as string, orderId: orderId as string };
+  }
+  const confirm = (loadId: string) =>
+    planner().from("loads").update({ status: "confirmed" }).eq("id", loadId);
+  const state = async (id: string) =>
+    (await service.from("assets").select("*").eq("id", id).single()).data!;
+  const moves = async (id: string) =>
+    (
+      await service
+        .from("asset_movements")
+        .select("from_status, to_status, load_id, stop_id, to_site_id, to_depot_id")
+        .eq("asset_id", id)
+        .order("moved_at")
+        .order("created_at")
+    ).data!;
+
+  async function record(stopId: string, extra: Record<string, unknown> = {}) {
+    const signature = await uploadPodFile(driver(), stopId, "signature.png");
+    const { error } = await driver().rpc("record_pod", {
+      client_id: crypto.randomUUID(),
+      target_stop: stopId,
+      outcome: "delivered",
+      received_by: "Jo Bloggs",
+      signature_path: signature,
+      ...extra,
+    });
+    return error;
+  }
+
+  it("a drop goes out on the vehicle, to the customer, and a collection comes back to the depot", async () => {
+    const out = await asset();
+    const back = await asset("at_customer", far);
+    const r = await load("AS-1");
+    expect(
+      (
+        await planner()
+          .from("stop_assets")
+          .insert({ stop_id: r.stopId, asset_id: out, direction: "drop" })
+      ).error,
+    ).toBeNull();
+    const { data: collectStop, error } = await planner().rpc("add_collection", {
+      target_load: r.loadId,
+      asset_ids: [back],
+    });
+    expect(error).toBeNull();
+    await confirm(r.loadId);
+
+    // Delivery: the run starts, the stillage goes on and comes off at the customer.
+    expect(await record(r.stopId)).toBeNull();
+    const dropped = await state(out);
+    expect(dropped).toMatchObject({
+      status: "at_customer",
+      site_id: near.siteId,
+      customer_id: near.customerId,
+      load_id: null,
+    });
+    expect(dropped.dropped_on).not.toBeNull();
+    const due = new Date(dropped.dropped_on);
+    due.setDate(due.getDate() + 28);
+    expect(dropped.expected_return_date).toBe(due.toISOString().slice(0, 10));
+    expect(await moves(out)).toEqual([
+      expect.objectContaining({ from_status: null, to_status: "at_depot" }),
+      expect.objectContaining({
+        from_status: "at_depot",
+        to_status: "on_vehicle",
+        load_id: r.loadId,
+      }),
+      expect.objectContaining({
+        from_status: "on_vehicle",
+        to_status: "at_customer",
+        load_id: r.loadId,
+        stop_id: r.stopId,
+        to_site_id: near.siteId,
+      }),
+    ]);
+
+    // Collection-only stop: no name or signature, but something must be ticked.
+    const none = await driver().rpc("record_pod", {
+      client_id: crypto.randomUUID(),
+      target_stop: collectStop,
+      outcome: "delivered",
+    });
+    expect(none.error?.message).toMatch(/Tick what you collected/);
+    const picked = await driver().rpc("record_pod", {
+      client_id: crypto.randomUUID(),
+      target_stop: collectStop,
+      outcome: "delivered",
+      collected: [back],
+    });
+    expect(picked.error).toBeNull();
+    // Last stop: the load completes and the stillage is back at the depot.
+    expect((await state(back)).status).toBe("at_depot");
+    expect((await state(back)).depot_id).toBe(settings.depotId);
+    expect((await moves(back)).slice(-2)).toEqual([
+      expect.objectContaining({
+        from_status: "at_customer",
+        to_status: "on_vehicle",
+        stop_id: collectStop,
+      }),
+      expect.objectContaining({
+        from_status: "on_vehicle",
+        to_status: "at_depot",
+        load_id: r.loadId,
+      }),
+    ]);
+  });
+
+  it("a failed drop comes back to the depot; an uncollected asset stays put", async () => {
+    const out = await asset();
+    const left = await asset("at_customer", far);
+    const r = await load("AS-2");
+    await planner()
+      .from("stop_assets")
+      .insert({ stop_id: r.stopId, asset_id: out, direction: "drop" });
+    const { data: collectStop } = await planner().rpc("add_collection", {
+      target_load: r.loadId,
+      asset_ids: [left],
+    });
+    await confirm(r.loadId);
+    await driver().rpc("record_pod", {
+      client_id: crypto.randomUUID(),
+      target_stop: r.stopId,
+      outcome: "failed",
+      failure_reason: "site_closed",
+      note: "Closed",
+    });
+    expect((await state(out)).status).toBe("on_vehicle");
+    await driver().rpc("record_pod", {
+      client_id: crypto.randomUUID(),
+      target_stop: collectStop,
+      outcome: "failed",
+      failure_reason: "no_access",
+      note: "Locked yard",
+    });
+    expect((await state(out)).status).toBe("at_depot");
+    expect(await state(left)).toMatchObject({ status: "at_customer", site_id: far.siteId });
+    const { data: planned } = await service
+      .from("stop_assets")
+      .select("outcome")
+      .eq("asset_id", left)
+      .single();
+    expect(planned?.outcome).toBe("not_done");
+    // Free to be collected another day.
+    const again = await load("AS-3");
+    expect(
+      (await planner().rpc("add_collection", { target_load: again.loadId, asset_ids: [left] }))
+        .error,
+    ).toBeNull();
+  });
+
+  it("only assets that are there can be planned, once at a time, and only returnable types", async () => {
+    const out = await asset();
+    const atFar = await asset("at_customer", far);
+    const r = await load("AS-4");
+    const notAtSite = await planner()
+      .from("stop_assets")
+      .insert({ stop_id: r.stopId, asset_id: atFar, direction: "collect" });
+    expect(notAtSite.error?.message).toMatch(/isn't at this site/);
+    const notAtDepot = await planner()
+      .from("stop_assets")
+      .insert({ stop_id: r.stopId, asset_id: atFar, direction: "drop" });
+    expect(notAtDepot.error?.message).toMatch(/isn't at the depot/);
+    await planner()
+      .from("stop_assets")
+      .insert({ stop_id: r.stopId, asset_id: out, direction: "drop" });
+    const other = await load("AS-5");
+    const twice = await planner()
+      .from("stop_assets")
+      .insert({ stop_id: other.stopId, asset_id: out, direction: "drop" });
+    expect(twice.error).not.toBeNull();
+    const wrongType = await planner()
+      .from("assets")
+      .insert({ unit_type_id: plain, asset_number: "DP-1", depot_id: settings.depotId });
+    expect(wrongType.error?.message).toMatch(/Only returnable/);
+    const duplicate = await planner()
+      .from("assets")
+      .insert({ unit_type_id: stillage, asset_number: " st-1 ", depot_id: settings.depotId });
+    expect(duplicate.error).not.toBeNull();
+  });
+
+  it("a collection stop stays when its delivery comes off the load", async () => {
+    const atNear = await asset("at_customer", near);
+    const r = await load("AS-6");
+    await planner().rpc("add_collection", { target_load: r.loadId, asset_ids: [atNear] });
+    await planner().rpc("remove_order_from_load", { target_order: r.orderId });
+    const { data: stops } = await service.from("load_stops").select("id").eq("load_id", r.loadId);
+    expect(stops).toHaveLength(1);
+    await planner().from("stop_assets").delete().eq("asset_id", atNear);
+    const { data: after } = await service.from("load_stops").select("id").eq("load_id", r.loadId);
+    expect(after).toHaveLength(0);
+  });
+
+  it("moving an asset by hand records the note and cancels its plans", async () => {
+    const atFar = await asset("at_customer", far);
+    const r = await load("AS-8");
+    await planner().rpc("add_collection", { target_load: r.loadId, asset_ids: [atFar] });
+    const { error } = await planner().rpc("move_asset", {
+      target_asset: atFar,
+      to_status: "at_depot",
+      target_depot: settings.depotId,
+      note: "Customer dropped it back",
+    });
+    expect(error).toBeNull();
+    expect((await state(atFar)).status).toBe("at_depot");
+    const { data: plans } = await service.from("stop_assets").select("id").eq("asset_id", atFar);
+    expect(plans).toEqual([]);
+    const { data: last } = await service
+      .from("asset_movements")
+      .select("note, to_status")
+      .eq("asset_id", atFar)
+      .order("moved_at", { ascending: false })
+      .limit(1)
+      .single();
+    expect(last).toEqual({ note: "Customer dropped it back", to_status: "at_depot" });
+    const office = await member(org, "office").client.rpc("move_asset", {
+      target_asset: atFar,
+      to_status: "lost",
+    });
+    expect(office.error?.message).toMatch(/Only planners/);
+    expect((await state(atFar)).status).toBe("at_depot");
+  });
+
+  it("the warehouse can assign drops; office and drivers can't plan or move assets", async () => {
+    const out = await asset();
+    const r = await load("AS-7");
+    expect(
+      (
+        await member(org, "warehouse")
+          .client.from("stop_assets")
+          .insert({ stop_id: r.stopId, asset_id: out, direction: "drop" })
+      ).error,
+    ).toBeNull();
+    for (const role of ["office", "driver"] as const) {
+      const other = await asset();
+      const { error } = await member(org, role)
+        .client.from("stop_assets")
+        .insert({ stop_id: r.stopId, asset_id: other, direction: "drop" });
+      expect(error, role).not.toBeNull();
+      const { data: moved } = await member(org, role)
+        .client.from("assets")
+        .update({ status: "lost", depot_id: null })
+        .eq("id", other)
+        .select();
+      expect(moved ?? [], role).toEqual([]);
+      const forged = await member(org, role).client.from("asset_movements").insert({
+        organisation_id: org.id,
+        asset_id: other,
+        to_status: "lost",
+      });
+      expect(forged.error, role).not.toBeNull();
+    }
+    // A planner marking one lost is recorded as a movement.
+    const lost = await asset();
+    await planner().from("assets").update({ status: "lost", depot_id: null }).eq("id", lost);
+    expect((await moves(lost)).at(-1)).toMatchObject({
+      from_status: "at_depot",
+      to_status: "lost",
+    });
+  });
+});
+
+describe("standing runs (spec 6.12)", () => {
+  let settings: Awaited<ReturnType<typeof createSettings>>;
+  let a: Awaited<ReturnType<typeof createCustomer>>;
+  let b: Awaited<ReturnType<typeof createCustomer>>;
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date());
+  const plus = (n: number) => {
+    const d = new Date(`${today}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+  };
+  const run = (over: Record<string, unknown> = {}) => ({
+    name: "Tuesday and Thursday",
+    days: ["tue", "thu"],
+    cutoff_time: "10:00",
+    start_time: "08:00",
+    depot_id: settings.depotId,
+    vehicle_id: settings.vehicleId,
+    ...over,
+  });
+
+  beforeAll(async () => {
+    settings = await createSettings(org.admin.client, "standing");
+    a = await createCustomer(org.admin.client, "standing-a");
+    b = await createCustomer(org.admin.client, "standing-b");
+  });
+
+  it("admins save a run with its sites in order; others can't", async () => {
+    const { data: id, error } = await org.admin.client.rpc("save_standing_run", {
+      target_id: null,
+      run: run(),
+      site_ids: [b.siteId, a.siteId],
+    });
+    expect(error).toBeNull();
+    const { data: sites } = await service
+      .from("standing_run_sites")
+      .select("site_id, position")
+      .eq("run_id", id)
+      .order("position");
+    expect(sites?.map((s) => s.site_id)).toEqual([b.siteId, a.siteId]);
+    const none = await org.admin.client.rpc("save_standing_run", {
+      target_id: id,
+      run: run(),
+      site_ids: [],
+    });
+    expect(none.error?.message).toMatch(/at least one site/);
+    for (const role of NON_ADMINS) {
+      const r = await member(org, role).client.rpc("save_standing_run", {
+        target_id: null,
+        run: run({ name: `By ${role}` }),
+        site_ids: [a.siteId],
+      });
+      expect(r.error, role).not.toBeNull();
+    }
+    await org.admin.client.from("standing_runs").delete().eq("id", id);
+  });
+
+  it("opening the plan creates a draft load on each run day, once", async () => {
+    const { data: id } = await org.admin.client.rpc("save_standing_run", {
+      target_id: null,
+      run: run({
+        name: "Every day",
+        days: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+        driver_id: settings.driverId,
+      }),
+      site_ids: [a.siteId],
+    });
+    const planner = member(org, "planner").client;
+    const first = await planner.rpc("generate_standing_loads", {
+      from_date: plus(-3),
+      to_date: plus(2),
+    });
+    // Days before today aren't generated.
+    expect(first.data).toBe(3);
+    const { data: loads } = await service
+      .from("loads")
+      .select("id, load_date, status, vehicle_id, start_time")
+      .eq("standing_run_id", id)
+      .order("load_date");
+    expect(loads?.map((l) => l.load_date)).toEqual([today, plus(1), plus(2)]);
+    expect(loads?.[0]).toMatchObject({
+      status: "draft",
+      vehicle_id: settings.vehicleId,
+      start_time: "08:00:00",
+    });
+    const { data: drivers } = await service
+      .from("load_drivers")
+      .select("driver_id")
+      .eq("load_id", loads![0].id);
+    expect(drivers).toEqual([{ driver_id: settings.driverId }]);
+
+    expect(
+      (await planner.rpc("generate_standing_loads", { from_date: today, to_date: plus(2) })).data,
+    ).toBe(0);
+    // A draft load the planner deletes stays deleted.
+    await planner.from("loads").delete().eq("id", loads![1].id);
+    expect(
+      (await planner.rpc("generate_standing_loads", { from_date: today, to_date: plus(2) })).data,
+    ).toBe(0);
+    // Office staff can open the plan but don't create loads.
+    expect(
+      (
+        await member(org, "office").client.rpc("generate_standing_loads", {
+          from_date: today,
+          to_date: plus(6),
+        })
+      ).data,
+    ).toBe(0);
+    await org.admin.client.from("standing_runs").update({ active: false }).eq("id", id);
+  });
+});

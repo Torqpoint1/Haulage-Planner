@@ -71,7 +71,12 @@ const SECTIONS: { title: string; description: string; icon: LucideIcon; href?: s
     icon: Map,
     href: "/settings/zones",
   },
-  { title: "Standing runs", description: "Routine routes that repeat each week.", icon: Repeat },
+  {
+    title: "Standing runs",
+    description: "Routine routes that repeat each week.",
+    icon: Repeat,
+    href: "/settings/standing-runs",
+  },
   {
     title: "Warning thresholds",
     description: "When checks turn amber or block a load.",

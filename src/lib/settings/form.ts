@@ -21,7 +21,7 @@ export function formObject(formData: FormData): FormObject {
 }
 
 const blankToUndefined = (v: unknown) => (typeof v === "string" && v.trim() === "" ? undefined : v);
-const first = (v: unknown) => (Array.isArray(v) ? v[0] : v);
+export const first = (v: unknown) => (Array.isArray(v) ? v[0] : v);
 
 /** Required text, trimmed. */
 export const text = (label: string, max = 120) =>

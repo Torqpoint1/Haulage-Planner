@@ -58,7 +58,9 @@ export type Capability =
   | "plans.approve"
   | "warnings.override"
   | "warehouse.tick"
-  | "pod.record";
+  | "pod.record"
+  | "assets.manage"
+  | "assets.assign";
 
 const CAPABILITIES: Record<Role, readonly Capability[]> = {
   admin: [
@@ -71,6 +73,8 @@ const CAPABILITIES: Record<Role, readonly Capability[]> = {
     "warnings.override",
     "warehouse.tick",
     "pod.record",
+    "assets.manage",
+    "assets.assign",
   ],
   planner: [
     "orders.edit",
@@ -79,8 +83,10 @@ const CAPABILITIES: Record<Role, readonly Capability[]> = {
     "plans.approve",
     "warnings.override",
     "warehouse.tick",
+    "assets.manage",
+    "assets.assign",
   ],
-  warehouse: ["warehouse.tick"],
+  warehouse: ["warehouse.tick", "assets.assign"],
   driver: ["pod.record"],
   office: [],
 };

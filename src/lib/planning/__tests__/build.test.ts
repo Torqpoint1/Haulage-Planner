@@ -29,6 +29,7 @@ const load: PlanLoad = {
   status: "planned",
   notes: "",
   driver_ids: [],
+  standing_run_id: null,
   stops: [
     {
       id: "s1",
@@ -45,6 +46,7 @@ const load: PlanLoad = {
       confirmed_at: null,
       confirmation_note: "",
       order_ids: ["o1"],
+      assets: [],
     },
   ],
 };
@@ -82,6 +84,8 @@ const data: PlanData = {
   decisions: [],
   legs: {},
   picking: {},
+  standingRuns: [],
+  assets: [],
 };
 const clock = { now: new Date("2026-10-01T08:00:00Z"), today: "2026-10-01" };
 

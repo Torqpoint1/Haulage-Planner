@@ -178,6 +178,9 @@ export async function loadDriverRun(opts: {
           siteNotes,
           handling: [...new Set(orders.flatMap((o) => o.lines.flatMap((l) => l.handling)))],
           orders,
+          assets: stop.assets
+            .filter((a) => a.outcome === "pending" || a.outcome === "done")
+            .map((a) => ({ id: a.id, label: a.label, direction: a.direction })),
           pod: pods.get(stop.id) ?? null,
         };
       }),

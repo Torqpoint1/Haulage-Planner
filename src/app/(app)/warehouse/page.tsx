@@ -23,6 +23,7 @@ export default async function WarehousePage({ searchParams }: PageProps<"/wareho
       today={today}
       selectedLoadId={typeof params.load === "string" ? params.load : null}
       canTick={can(session.membership.role, "warehouse.tick")}
+      canAssign={can(session.membership.role, "assets.assign")}
     />
   );
 }

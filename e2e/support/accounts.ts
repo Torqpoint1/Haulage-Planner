@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { localSupabase } from "../../tests/support/local-supabase";
 
@@ -8,6 +9,141 @@ export const PASSWORD = "correct-horse-battery";
 const env = localSupabase();
 const options = { auth: { persistSession: false, autoRefreshToken: false } } as const;
 const service = createClient(env.apiUrl, env.secretKey, options);
+
+/** This run's demo company (each run creates its own; the newest is this run's). */
+async function currentOrgId() {
+  const { data } = await service
+    .from("organisations")
+    .select("id")
+    .eq("name", "Example Doors Ltd")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single();
+  return data!.id as string;
+}
+
+/**
+ * A planned load today to Cheltenham showroom (where ST-201/ST-202 are
+ * overdue) with Gareth Morgan driving, for the assets test. Arranged directly
+ * so the test can focus on what the planner and driver do.
+ */
+export async function createAssetLoad() {
+  const client = await adminClient();
+  const today = isoInDays(0);
+  const one = async (table: string, column: string, value: string) =>
+    (
+      (await client.from(table).select("id").eq(column, value).limit(1).single()).data as {
+        id: string;
+      }
+    ).id;
+  const { data: site } = await client
+    .from("sites")
+    .select("id, customer_id")
+    .eq("name", "Cheltenham showroom")
+    .single();
+  const [unit, depot, vehicle, driver] = await Promise.all([
+    one("unit_types", "short_code", "DP"),
+    one("depots", "name", "Stroud factory"),
+    one("vehicles", "name", "7.5t curtainsider"),
+    one("drivers", "name", "Gareth Morgan"),
+  ]);
+  const { data: orderId, error } = await client.rpc("save_order", {
+    target_order_id: null,
+    order_data: {
+      customer_id: site!.customer_id,
+      site_id: site!.id,
+      order_ref: "AS-701",
+      required_date: today,
+      readiness: "ready",
+    },
+    lines: [{ unit_type_id: unit, quantity: 2, weight_per_unit_kg: 140 }],
+  });
+  if (error) throw new Error(`AS-701: ${error.message}`);
+  const [loadId] = await insert(client, "loads", [
+    { load_date: today, depot_id: depot, vehicle_id: vehicle },
+  ]);
+  const added = await client.rpc("add_order_to_load", {
+    target_load: loadId,
+    target_order: orderId,
+  });
+  if (added.error) throw new Error(`add AS-701: ${added.error.message}`);
+  await insert(client, "load_drivers", [{ load_id: loadId, driver_id: driver }]);
+  return { loadId, driverId: driver, today };
+}
+
+/** Signed in as this run's demo admin, so writes go through the same rules as the app. */
+async function adminClient() {
+  const { adminEmail } = JSON.parse(readFileSync("e2e/.auth/company.json", "utf8")) as {
+    adminEmail: string;
+  };
+  const client = createClient(env.apiUrl, env.publishableKey, options);
+  const { error } = await client.auth.signInWithPassword({ email: adminEmail, password: PASSWORD });
+  if (error) throw error;
+  return client;
+}
+
+/** Confirm a load, as a planner would once happy with it. */
+export async function confirmLoad(loadId: string) {
+  const { error } = await (
+    await adminClient()
+  )
+    .from("loads")
+    .update({ status: "confirmed" })
+    .eq("id", loadId);
+  if (error) throw new Error(`confirm: ${error.message}`);
+}
+
+/** Where an asset is now, as stored. */
+export async function assetState(assetNumber: string) {
+  const org = await currentOrgId();
+  const { data } = await service
+    .from("assets")
+    .select("status, site_id, depot_id, load_id, dropped_on, expected_return_date")
+    .eq("organisation_id", org)
+    .eq("asset_number", assetNumber)
+    .single();
+  return data!;
+}
+
+/**
+ * A customer with one site and an unplanned order (SR-601) that only the
+ * standing runs test uses, so its suggestions don't depend on other tests.
+ */
+export async function createStandingRunCase() {
+  const client = await adminClient();
+  const [customer] = await insert(client, "customers", [
+    { name: "Wolds Garden Supplies", account_ref: "WGS1" },
+  ]);
+  const [site] = await insert(client, "sites", [
+    {
+      customer_id: customer,
+      name: "Wolds garden centre",
+      postcode: "GL54 2AB",
+      latitude: 51.8846,
+      longitude: -1.7556,
+      location_source: "postcode",
+      site_equipment: ["forklift"],
+      last_verified_at: new Date().toISOString(),
+    },
+  ]);
+  const { data: unit } = await client
+    .from("unit_types")
+    .select("id")
+    .eq("short_code", "EUR")
+    .single();
+  const { error } = await client.rpc("save_order", {
+    target_order_id: null,
+    order_data: {
+      customer_id: customer,
+      site_id: site,
+      order_ref: "SR-601",
+      required_date: isoInDays(7),
+      readiness: "ready",
+    },
+    lines: [{ unit_type_id: unit!.id, quantity: 3, weight_per_unit_kg: 300 }],
+  });
+  if (error) throw new Error(`SR-601: ${error.message}`);
+}
 
 /** Today's driver run as stored: for checking what reached the database, never for arranging UI state. */
 export async function driverRunRecords() {
@@ -96,6 +232,8 @@ export async function createCompany(
   await seedOrders(admin.client);
   await seedPlanning(admin.client);
   await seedDriverRun(admin.client);
+  await seedHistory(admin.client);
+  await seedAssets(admin.client);
   return { adminEmail: admin.email, members: created };
 }
 
@@ -815,4 +953,175 @@ async function seedDriverRun(client: Client) {
     .update({ booking_slot: "10:30", booking_ref: "GL-2231" })
     .eq("id", stops![1].id);
   await client.from("loads").update({ status: "confirmed" }).eq("id", loadId);
+}
+
+/** The 10th of last month and of the month before, for history searches. */
+export function historyDates() {
+  const [y, m] = isoInDays(0).split("-").map(Number);
+  const tenth = (back: number) => {
+    const d = new Date(Date.UTC(y, m - 1 - back, 10));
+    return d.toISOString().slice(0, 10);
+  };
+  return { lastMonth: tenth(1), monthBefore: tenth(2) };
+}
+
+/**
+ * Past deliveries (orders HS-5xx), for "what did we send Hillside Builders in
+ * [last month]?": one load last month to Hillside and Marlow, and an older one.
+ */
+async function seedHistory(client: Client) {
+  const { lastMonth, monthBefore } = historyDates();
+  const [
+    { data: units },
+    { data: vehicles },
+    { data: depots },
+    { data: sites },
+    { data: drivers },
+  ] = await Promise.all([
+    client.from("unit_types").select("id, short_code"),
+    client.from("vehicles").select("id, name"),
+    client.from("depots").select("id").eq("is_default", true),
+    client.from("sites").select("id, customer_id, name"),
+    client.from("drivers").select("id, name"),
+  ]);
+  const unit = (code: string) => units!.find((u) => u.short_code === code)!.id;
+  const site = (name: string) => sites!.find((x) => x.name === name)!;
+  const order = (
+    ref: string,
+    siteName: string,
+    date: string,
+    lines: [string, number][],
+    po: string,
+  ) => ({
+    order: {
+      customer_id: site(siteName).customer_id,
+      site_id: site(siteName).id,
+      order_ref: ref,
+      customer_po: po,
+      delivery_note_number: `DN-${ref.slice(3)}`,
+      required_date: date,
+      readiness: "ready",
+    },
+    lines: lines.map(([code, quantity]) => ({
+      unit_type_id: unit(code),
+      quantity,
+      weight_per_unit_kg: 140,
+    })),
+  });
+  const { error } = await client.rpc("import_orders", {
+    orders: [
+      order(
+        "HS-501",
+        "Stroud yard",
+        lastMonth,
+        [
+          ["DP", 4],
+          ["EUR", 2],
+        ],
+        "HB-7781",
+      ),
+      order("HS-502", "Gloucester workshop", lastMonth, [["DP", 3]], "MJ-3302"),
+      order("HS-503", "Stroud yard", monthBefore, [["DP", 6]], "HB-7650"),
+    ],
+  });
+  if (error) throw new Error(`history orders: ${error.message}`);
+  const { data: saved } = await client
+    .from("orders")
+    .select("id, order_ref")
+    .like("order_ref", "HS-5%");
+  const id = (ref: string) => saved!.find((o) => o.order_ref === ref)!.id;
+
+  async function pastLoad(date: string, refs: string[]) {
+    const [loadId] = await insert(client, "loads", [
+      {
+        load_date: date,
+        depot_id: depots![0].id,
+        vehicle_id: vehicles!.find((v) => v.name === "18t curtainsider")!.id,
+      },
+    ]);
+    for (const ref of refs) {
+      const { error: addError } = await client.rpc("add_order_to_load", {
+        target_load: loadId,
+        target_order: id(ref),
+      });
+      if (addError) throw new Error(`add ${ref}: ${addError.message}`);
+    }
+    await insert(client, "load_drivers", [
+      { load_id: loadId, driver_id: drivers!.find((d) => d.name === "Dave Hughes")!.id },
+    ]);
+    await client
+      .from("load_stops")
+      .update({
+        status: "delivered",
+        confirmed: true,
+        confirmed_by: "Gemma Hill",
+        confirmation_method: "phone",
+      })
+      .eq("load_id", loadId);
+    await client.from("loads").update({ status: "complete" }).eq("id", loadId);
+    await client.from("orders").update({ status: "delivered" }).in("id", refs.map(id));
+  }
+  await pastLoad(lastMonth, ["HS-501", "HS-502"]);
+  await pastLoad(monthBefore, ["HS-503"]);
+}
+
+/**
+ * Returnable stillages (spec 6.11): six at the depot (ST-101…106), and two
+ * overdue at a customer site that no seeded load visits, so they only show up
+ * where a test puts them.
+ */
+async function seedAssets(client: Client) {
+  const [{ data: depots }] = await Promise.all([
+    client.from("depots").select("id").eq("is_default", true),
+  ]);
+  const [stillage] = await insert(client, "unit_types", [
+    {
+      name: "Stillage",
+      short_code: "STL",
+      colour_tag: "load-6",
+      length_mm: 1200,
+      width_mm: 1000,
+      height_mm: 1500,
+      typical_weight_kg: 60,
+      returnable: true,
+      return_days: 28,
+    },
+  ]);
+  const [kitchens] = await insert(client, "customers", [
+    { name: "Cotswold Kitchens", account_ref: "CK09" },
+  ]);
+  const [showroom] = await insert(client, "sites", [
+    {
+      customer_id: kitchens,
+      name: "Cheltenham showroom",
+      postcode: "GL50 1HX",
+      latitude: 51.89965,
+      longitude: -2.07846,
+      location_source: "postcode",
+      site_equipment: ["forklift"],
+      last_verified_at: new Date().toISOString(),
+    },
+  ]);
+  await insert(
+    client,
+    "assets",
+    ["ST-101", "ST-102", "ST-103", "ST-104", "ST-105", "ST-106"].map((n) => ({
+      unit_type_id: stillage,
+      asset_number: n,
+      depot_id: depots![0].id,
+    })),
+  );
+  await insert(
+    client,
+    "assets",
+    ["ST-201", "ST-202"].map((n) => ({
+      unit_type_id: stillage,
+      asset_number: n,
+      status: "at_customer",
+      customer_id: kitchens,
+      site_id: showroom,
+      dropped_on: isoInDays(-40),
+      expected_return_date: isoInDays(-12),
+    })),
+  );
 }

@@ -17,12 +17,15 @@ import {
   createCustomer,
   createOrder,
   createLoad,
+  createAssets,
   createPod,
+  createStandingRun,
   createSettings,
   uploadPodFile,
   type CustomerFixture,
   type LoadFixture,
   type PodFixture,
+  type AssetFixture,
   type OrderFixture,
   type SettingsFixture,
 } from "./fixtures";
@@ -46,6 +49,8 @@ let orderB: OrderFixture;
 let loadA: LoadFixture;
 let loadB: LoadFixture;
 let podA: PodFixture;
+let assetsA: AssetFixture;
+let runA: string;
 const fileA = () => `${orgA.id}/documents/delivery-note.txt`;
 
 beforeAll(async () => {
@@ -69,6 +74,9 @@ beforeAll(async () => {
     createLoad(orgB.admin.client, settingsB, orderB),
   ]);
   podA = await createPod(orgA.admin.client, "alpha", settingsA, customerA);
+  assetsA = await createAssets(orgA.admin.client, "alpha", settingsA, customerA, loadA);
+  await createAssets(orgB.admin.client, "bravo", settingsB, customerB, loadB);
+  runA = await createStandingRun(orgA.admin.client, "alpha", settingsA, customerA);
 
   const { data, error } = await orgA.admin.client
     .rpc("create_invitation", { invite_email: "pending@example.test", invite_role: "office" })
@@ -632,5 +640,89 @@ describe("proof of delivery can't be recorded or seen across organisations", () 
       target_order: podA.orderId,
     });
     expect(replan.error).not.toBeNull();
+  });
+});
+
+describe("assets can't be moved or planned across organisations", () => {
+  it("B can't put A's assets on its loads or collect them", async () => {
+    const before = await snapshot("assets", "organisation_id");
+    const drop = await orgB.admin.client
+      .from("stop_assets")
+      .insert({ stop_id: loadB.stopId, asset_id: assetsA.atDepot, direction: "drop" });
+    expect(drop.error).not.toBeNull();
+    const collect = await orgB.admin.client.rpc("add_collection", {
+      target_load: loadB.loadId,
+      asset_ids: [assetsA.atCustomer],
+    });
+    expect(collect.error).not.toBeNull();
+    const intoA = await orgB.admin.client.rpc("add_collection", {
+      target_load: loadA.loadId,
+      asset_ids: [assetsA.atCustomer],
+    });
+    expect(intoA.error).not.toBeNull();
+    expect(await snapshot("assets", "organisation_id")).toEqual(before);
+  });
+});
+
+describe("standing runs stay in their organisation", () => {
+  it("B can't save over A's run or generate loads from it", async () => {
+    const before = await snapshot("standing_runs", "organisation_id");
+    const save = await orgB.admin.client.rpc("save_standing_run", {
+      target_id: runA,
+      run: {
+        name: "Hijacked",
+        days: ["mon"],
+        cutoff_time: "10:00",
+        start_time: "07:00",
+        depot_id: settingsB.depotId,
+      },
+      site_ids: [customerB.siteId],
+    });
+    expect(save.error).not.toBeNull();
+    const loadsBefore = await countFor("loads", "organisation_id", orgA.id);
+    await orgB.admin.client.rpc("generate_standing_loads", {
+      from_date: "2026-10-01",
+      to_date: "2026-11-30",
+    });
+    expect(await countFor("loads", "organisation_id", orgA.id)).toBe(loadsBefore);
+    expect(await snapshot("standing_runs", "organisation_id")).toEqual(before);
+  });
+});
+
+describe("history search stays in the organisation", () => {
+  it("finds A's deliveries for A, and nothing of A's for B", async () => {
+    const { data: mine } = await member(orgA, "office").client.rpc("search_history", {
+      q: "alpha-2001",
+    });
+    expect(mine?.map((r: { order_id: string }) => r.order_id)).toEqual([podA.orderId]);
+    for (const [who, client] of intruders()) {
+      const { data } = await client.rpc("search_history", { q: "alpha" });
+      expect(data ?? [], who).toEqual([]);
+      const byCustomer = await client.rpc("search_history", {
+        target_customer: customerA.customerId,
+      });
+      expect(byCustomer.data ?? [], who).toEqual([]);
+    }
+  });
+
+  it("filters by customer and date range in one search", async () => {
+    const client = orgA.admin.client;
+    const october = await client.rpc("search_history", {
+      target_customer: customerA.customerId,
+      date_from: "2026-10-01",
+      date_to: "2026-10-31",
+    });
+    expect(october.error).toBeNull();
+    expect(new Set(october.data?.map((r: { order_id: string }) => r.order_id))).toEqual(
+      new Set([orderA.orderId, podA.orderId]),
+    );
+    const september = await client.rpc("search_history", {
+      target_customer: customerA.customerId,
+      date_from: "2026-09-01",
+      date_to: "2026-09-30",
+    });
+    expect(september.data).toEqual([]);
+    const byPo = await client.rpc("search_history", { q: "po-alpha-77" });
+    expect(byPo.data?.map((r: { order_id: string }) => r.order_id)).toEqual([orderA.orderId]);
   });
 });

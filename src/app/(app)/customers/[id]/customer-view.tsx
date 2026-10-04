@@ -1,5 +1,9 @@
 "use client";
 
+import { AssetStatusBadge } from "@/components/assets/asset-status";
+import type { AssetRow } from "@/lib/assets/data";
+import { formatIsoDate, plural } from "@/lib/format";
+
 import { Boxes, ClipboardList, Contact as ContactIcon, MapPin, Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -41,9 +45,21 @@ type Props = {
   staleDays: number;
   canEdit: boolean;
   initialTab: string;
+  /** Returnable assets at this customer's sites. */
+  assets: AssetRow[];
+  canSeeAssets: boolean;
 };
 
-export function CustomerView({ customer, sites, contacts, staleDays, canEdit, initialTab }: Props) {
+export function CustomerView({
+  customer,
+  sites,
+  contacts,
+  staleDays,
+  canEdit,
+  initialTab,
+  assets,
+  canSeeAssets,
+}: Props) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -304,13 +320,54 @@ export function CustomerView({ customer, sites, contacts, staleDays, canEdit, in
         </TabsContent>
 
         <TabsContent value="assets">
-          <Card>
-            <EmptyState
-              icon={Boxes}
-              title="No returnable assets on site"
-              description="Stillages, A-frames and cages left at this customer's sites will be tracked here."
-            />
-          </Card>
+          {assets.length ? (
+            <Card className="flex min-w-0 flex-col gap-3 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm text-text-muted">
+                  <span className="num">{plural(assets.length, "asset")}</span> at their sites
+                  {assets.some((a) => a.daysOverdue > 0)
+                    ? ` · ${assets.filter((a) => a.daysOverdue > 0).length} overdue`
+                    : ""}
+                </p>
+                {canSeeAssets ? (
+                  <Button asChild size="sm">
+                    <Link href={`/history/assets?customer=${customer.id}`}>Open in Assets</Link>
+                  </Button>
+                ) : null}
+              </div>
+              <ul
+                aria-label="Assets at this customer"
+                className="flex flex-col divide-y divide-border"
+              >
+                {assets.map((a) => (
+                  <li
+                    key={a.id}
+                    className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 py-2"
+                  >
+                    <span className="text-sm font-medium">{a.assetNumber}</span>
+                    <span className="text-sm text-text-muted">{a.unitTypeName}</span>
+                    <span className="min-w-0 flex-1 truncate text-sm">
+                      {a.where.split(" · ").slice(1).join(" · ")}
+                    </span>
+                    {a.expectedReturn ? (
+                      <span className="num text-xs text-text-muted">
+                        Due back {formatIsoDate(a.expectedReturn)}
+                      </span>
+                    ) : null}
+                    <AssetStatusBadge status={a.status} daysOverdue={a.daysOverdue} />
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : (
+            <Card>
+              <EmptyState
+                icon={Boxes}
+                title="No returnable assets on site"
+                description="Stillages, A-frames and cages left at this customer's sites are tracked here once they're delivered."
+              />
+            </Card>
+          )}
         </TabsContent>
 
         <TabsContent value="notes">
