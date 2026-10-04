@@ -9,7 +9,7 @@ Build in the stages of spec section 14, in order, and only start a stage once th
 
 ## Current stage
 
-**Stage 10: Today and reports. Complete; awaiting sign-off.** (Stages 0–9 signed off.)
+**All stages built; Stage 10 signed off.** (Stages 0–10 signed off, plus the post-Stage 10 follow-ups below.)
 
 - Done: Today (spec 9.1): header stats (loads, vehicles out, drops, overdue assets linked to the
   register); Needs attention for loads from today to the look-ahead (default 5 working days):
