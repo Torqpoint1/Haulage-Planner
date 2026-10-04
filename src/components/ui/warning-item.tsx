@@ -77,7 +77,9 @@ export function WarningItem({
     setReasonError(null);
   }
 
-  const showActions = !overridden && (fixes.length > 0 || onOverride || onDismiss);
+  // Fixes only show for someone who can apply them (no handler means read-only).
+  const shownFixes = onFix ? fixes : [];
+  const showActions = !overridden && (shownFixes.length > 0 || onOverride || onDismiss);
 
   return (
     <div
@@ -105,7 +107,7 @@ export function WarningItem({
       </div>
       {showActions ? (
         <div className="flex flex-wrap items-center gap-2">
-          {fixes.map((fix) => (
+          {shownFixes.map((fix) => (
             <Button key={fix.id} size="sm" variant="secondary" onClick={() => onFix?.(fix)}>
               {fix.label}
             </Button>

@@ -951,6 +951,7 @@ export function Gallery() {
                 </PanelSection>
                 <PanelSection title="Warnings">
                   <WarningItem
+                    onFix={(f) => toast.info(`Fix chosen: ${f.label}`)}
                     warning={{
                       severity: "blocking",
                       title: "Doors must travel upright",
@@ -1221,6 +1222,7 @@ export function Gallery() {
               />
               {!dismissed ? (
                 <WarningItem
+                  onFix={(f) => toast.info(`Fix chosen: ${f.label}`)}
                   warning={{
                     code: "UPRIGHT_HANDBALL",
                     severity: "check",
@@ -1242,6 +1244,7 @@ export function Gallery() {
                 </Button>
               )}
               <WarningItem
+                onFix={(f) => toast.info(`Fix chosen: ${f.label}`)}
                 warning={{
                   code: "SITE_INFO_STALE",
                   severity: "info",

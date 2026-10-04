@@ -80,8 +80,13 @@ test.describe("pickers", () => {
 
   test("tick lines picked and loaded, and flag shortages with a note", async ({ page }) => {
     const sheet = await openWarehouse(page);
-    const firstPicked = sheet.getByRole("button", { name: /^Picked: / }).first();
-    const firstLoaded = sheet.getByRole("button", { name: /^Loaded: / }).first();
+    // Lines are found by name: other tests may reorder this load's stops meanwhile.
+    const label = (await sheet
+      .getByRole("button", { name: /^Picked: / })
+      .first()
+      .getAttribute("aria-label"))!.replace(/^Picked: /, "");
+    const firstPicked = sheet.getByRole("button", { name: `Picked: ${label}`, exact: true });
+    const firstLoaded = sheet.getByRole("button", { name: `Loaded: ${label}`, exact: true });
     await expect(firstPicked).toHaveAttribute("aria-pressed", "false");
     await firstPicked.click();
     await expect(firstPicked).toHaveAttribute("aria-pressed", "true");
@@ -102,10 +107,9 @@ test.describe("pickers", () => {
     // It's saved: the progress survives a reload.
     await page.reload();
     const again = await openWarehouse(page);
-    await expect(again.getByRole("button", { name: /^Picked: / }).first()).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    await expect(
+      again.getByRole("button", { name: `Picked: ${label}`, exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
     await expect(again.getByText("1 door frame missing")).toBeVisible();
     const card = page
       .getByRole("navigation", { name: "Loads" })
