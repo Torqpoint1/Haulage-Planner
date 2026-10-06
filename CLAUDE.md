@@ -46,7 +46,11 @@ Build in the stages of spec section 14, in order, and only start a stage once th
   `/reset-password`. Playwright starts `e2e/support/mock-resend.mjs` on 3197.
 - Next: all stages in spec section 14 and the follow-ups are built. Remaining: a hosted Supabase
   project (with Resend SMTP and the redirect URLs), a Resend domain, and the privacy documents.
-- Open: no hosted Supabase project yet. postcodes.io and OpenRouteService are blocked by this
+- Hosted: Supabase project `bakjfvqkzrrkieatazcl` (London, free plan). Its GitHub integration
+  applies `supabase/migrations` when this branch is pushed (production branch =
+  `claude/new-session-ir0gdi`). This cloud environment can't reach `*.supabase.co`, so check
+  the deploy in the Supabase dashboard. Not deployed to Vercel yet.
+- Open: postcodes.io and OpenRouteService are blocked by this
   cloud environment's network policy; browser tests use `e2e/support/mock-postcodes.mjs`
   (`POSTCODES_API_URL=http://localhost:3199`) and `e2e/support/mock-ors.mjs`
   (`ORS_API_URL=http://localhost:3198`, roads = straight line × 1.25 at 40 mph), both started by
