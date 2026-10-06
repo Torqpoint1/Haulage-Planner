@@ -28,7 +28,7 @@ async function guarded<T>(run: () => Promise<ActionResult<T>>): Promise<ActionRe
 }
 
 async function siteOrigin() {
-  const configured = process.env.NEXT_PUBLIC_SITE_URL;
+  const configured = process.env.NEXT_PUBLIC_SITE_URL?.trim();
   if (configured) return configured.replace(/\/$/, "");
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";

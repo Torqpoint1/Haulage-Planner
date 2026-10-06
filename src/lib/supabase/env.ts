@@ -3,12 +3,20 @@
  * the browser; Row Level Security does the protecting (spec 5, 12).
  */
 export function supabaseEnv() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  const url = clean(process.env.NEXT_PUBLIC_SUPABASE_URL);
+  const key = clean(process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
   if (!url || !key) {
     throw new Error(
       "Supabase is not configured. Copy .env.example to .env.local and set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (see `npx supabase status` for local values).",
     );
   }
   return { url, key };
+}
+
+/**
+ * Neither value can contain spaces or line breaks, but pasting into a hosting
+ * dashboard (especially from a phone) often adds some; drop them.
+ */
+export function clean(value: string | undefined): string {
+  return (value ?? "").replace(/\s+/g, "");
 }
