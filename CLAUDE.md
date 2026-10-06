@@ -49,7 +49,10 @@ Build in the stages of spec section 14, in order, and only start a stage once th
 - Hosted: Supabase project `bakjfvqkzrrkieatazcl` (London, free plan). Its GitHub integration
   applies `supabase/migrations` when this branch is pushed (production branch =
   `claude/new-session-ir0gdi`). This cloud environment can't reach `*.supabase.co`, so check
-  the deploy in the Supabase dashboard. Not deployed to Vercel yet.
+  the deploy in the Supabase dashboard. Vercel project `haulage-planner` (Luke's projects, Hobby)
+  deploys this branch to https://haulage-planner-dun.vercel.app; env vars are set in Vercel.
+  Supabase Auth site URL and redirect URLs point there. `clean()` in `lib/supabase/env.ts` strips
+  whitespace pasted into env values (from a phone).
 - Open: postcodes.io and OpenRouteService are blocked by this
   cloud environment's network policy; browser tests use `e2e/support/mock-postcodes.mjs`
   (`POSTCODES_API_URL=http://localhost:3199`) and `e2e/support/mock-ors.mjs`

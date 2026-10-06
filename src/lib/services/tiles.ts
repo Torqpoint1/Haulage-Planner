@@ -8,6 +8,8 @@
  * services failing must never stop planning).
  */
 
+import { clean } from "@/lib/supabase/env";
+
 export type TileConfig = {
   url: string;
   attribution: string;
@@ -17,9 +19,9 @@ export type TileConfig = {
 type Provider = "maptiler" | "stadia" | "none";
 
 export function getTileConfig(theme: "light" | "dark"): TileConfig | null {
-  const key = process.env.NEXT_PUBLIC_MAP_TILE_KEY;
+  const key = clean(process.env.NEXT_PUBLIC_MAP_TILE_KEY);
   // MapTiler is the chosen provider (Stage 6); it's used whenever a key is set.
-  const provider = (process.env.NEXT_PUBLIC_MAP_TILE_PROVIDER ||
+  const provider = (clean(process.env.NEXT_PUBLIC_MAP_TILE_PROVIDER) ||
     (key ? "maptiler" : "none")) as Provider;
 
   if (provider === "maptiler" && key) {
